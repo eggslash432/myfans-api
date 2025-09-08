@@ -1,0 +1,16 @@
+# docker-compose.yml（プロジェクト直下）
+version: "3.8"
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: myfans
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: myfans
+    ports: [ "5432:5432" ]
+    volumes: [ "pgdata:/var/lib/postgresql/data" ]
+  adminer:
+    image: adminer
+    ports: [ "8080:8080" ]
+volumes:
+  pgdata:
