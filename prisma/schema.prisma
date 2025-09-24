@@ -7,14 +7,272 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role { fan creator admin }
+/**
+ * ===== Enums =====
+ */
+enum Role {
+  fan
+  creator
+  admin
+}
 
+enum KycStatus {
+  pending
+  approved
+  rejected
+}
+
+enum SubStatus {
+  active
+  past_due
+  canceled
+  incomplete
+  trialing
+}
+
+enum Visibility {
+  free
+  plan
+  paid_single
+}
+
+enum MediaType {
+  image
+  video
+  audio
+}
+
+enum PaymentKind {
+  subscription
+  one_time
+}
+
+enum PaymentStatus {
+  paid
+  refunded
+  failed
+  pending
+}
+
+enum PayoutStatus {
+  requested
+  approved
+  paid
+  rejected
+}
+
+/**
+ * ===== Core Users =====
+ */
 model User {
-  id           Int      @id @default(autoincrement())
-  email        String   @unique
-  passwordHash String
-  role         Role
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              Int       @id @default(autoincrement())
+  email           String    @unique
+  passwordHash    String
+  role            Role
+  isActive        Boolean   @default(true)
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  profile        Profile?
+  creator        Creator?
+  kycSubmissions KycSubmission[]
+  subscriptions  Subscription[]
+  favorites      Favorite[]
+  payments       Payment[]
+
+  @@index([role])
+  @@index([isActive])
+}
+
+model Profile {
+  userId      Int      @id
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName String
+  avatarUrl   String?
+  bio         String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/**
+ * ===== Creator & KYC =====
+ */
+model Creator {
+  userId      Int      @id
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicName  String
+  bankAccount Json?
+  isListed    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  plans    Plan[]
+  posts    Post[]
+  payouts  Payout[]
+  Favorite Favorite[]
+  Payment  Payment[]
+
+  @@index([isListed])
+}
+
+model KycSubmission {
+  id         Int       @id @default(autoincrement())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     Int
+  status     KycStatus
+  documents  Json
+  reviewedBy Int?
+  reviewedAt DateTime?
+  note       String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status, createdAt])
+}
+
+/**
+ * ===== Plans & Subscriptions =====
+ */
+model Plan {
+  id              Int      @id @default(autoincrement())
+  creator         Creator  @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  creatorId       Int
+  name            String
+  priceJpy        Int
+  description     String?
+  isActive        Boolean  @default(true)
+  externalPriceId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subscriptions Subscription[]
+  posts         Post[]
+  Payment       Payment[]
+
+  @@index([creatorId])
+  @@index([isActive, creatorId])
+}
+
+model Subscription {
+  id                 Int       @id @default(autoincrement())
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId             Int
+  plan               Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId             Int
+  status             SubStatus
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean   @default(false)
+  externalSubId      String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([userId, planId])
+  @@index([status])
+  @@index([currentPeriodEnd])
+}
+
+/**
+ * ===== Posts =====
+ */
+model Post {
+  id          Int        @id @default(autoincrement())
+  creator     Creator    @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  creatorId   Int
+  title       String
+  bodyMd      String?
+  visibility  Visibility
+  plan        Plan?      @relation(fields: [planId], references: [id])
+  planId      Int?
+  isPublished Boolean    @default(false)
+  publishedAt DateTime?
+  priceJpy    Int?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  media   PostMedia[]
+  Payment Payment[]
+
+  @@index([creatorId, isPublished])
+  @@index([visibility, planId])
+  @@index([publishedAt])
+}
+
+model PostMedia {
+  id        Int       @id @default(autoincrement())
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId    Int
+  mediaType MediaType
+  url       String
+  sortOrder Int       @default(0)
+
+  @@index([postId])
+}
+
+/**
+ * ===== Social =====
+ */
+model Favorite {
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        Int
+  creator       Creator  @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  creatorId     Int
+  notifyEnabled Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  @@id([userId, creatorId])
+}
+
+/**
+ * ===== Payments & Operational =====
+ */
+model Payment {
+  id           Int           @id @default(autoincrement())
+  user         User?         @relation(fields: [userId], references: [id])
+  userId       Int?
+  creator      Creator?      @relation(fields: [creatorId], references: [userId])
+  creatorId    Int?
+  plan         Plan?         @relation(fields: [planId], references: [id])
+  planId       Int?
+  post         Post?         @relation(fields: [postId], references: [id])
+  postId       Int?
+  amountJpy    Int
+  kind         PaymentKind
+  externalTxId String?       @unique
+  status       PaymentStatus
+  paidAt       DateTime?
+  createdAt    DateTime      @default(now())
+
+  @@index([status, createdAt])
+  @@index([creatorId])
+  @@index([planId])
+  @@index([postId])
+}
+
+model Payout {
+  id          Int          @id @default(autoincrement())
+  creator     Creator      @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  creatorId   Int
+  amountJpy   Int
+  status      PayoutStatus
+  requestedAt DateTime     @default(now())
+  paidAt      DateTime?
+  note        String?
+
+  @@index([creatorId, status])
+}
+
+model WebhookEvent {
+  id             Int       @id @default(autoincrement())
+  provider       String
+  eventType      String
+  idempotencyKey String?   @unique
+  payload        Json
+  processed      Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  processedAt    DateTime?
+
+  @@index([provider, eventType, createdAt])
 }
