@@ -7,11 +7,10 @@ import { KycStatus, Role } from '@prisma/client';
 export class CreatorsService {
   constructor(private prisma: PrismaService) {}
 
-  async applyCreator(userIdRaw: string | number, dto: CreateCreatorDto) {
-    // Prisma の User.id は Int なので数値に寄せる
-    const userId = Number(userIdRaw);
+  async applyCreator(userIdRaw: string, dto: CreateCreatorDto) {
+    const userId = userIdRaw;
 
-    if (Number.isNaN(userId)) {
+    if (!userId || typeof userId !== 'string') {
       throw new BadRequestException('invalid user id: ' + userIdRaw);
     }
 
@@ -31,13 +30,12 @@ export class CreatorsService {
     const creator = await this.prisma.creator.create({
       data: {
         userId,
-        publicName: dto.publicName ?? dto.displayName ?? '',
+        publicName,
         bankAccount: dto.bankAccount ?? undefined,
-        // isListed は初期 false（審査後に true へ）
       },
     });
 
-    // Profile（任意）更新：displayName/bio が来ていれば反映
+    // Profile（任意）更新
     if (dto.displayName || dto.bio) {
       await this.prisma.profile.upsert({
         where: { userId },
@@ -53,7 +51,7 @@ export class CreatorsService {
       });
     }
 
-    // KYC 申請（任意）を同時に作る
+    // KYC 申請（任意）
     if (dto.kycDocuments) {
       await this.prisma.kycSubmission.create({
         data: {

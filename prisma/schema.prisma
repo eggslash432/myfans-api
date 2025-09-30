@@ -65,7 +65,7 @@ enum PayoutStatus {
  * ===== Core Users =====
  */
 model User {
-  id              Int       @id @default(autoincrement())
+  id              String    @id @default(uuid())
   email           String    @unique
   passwordHash    String
   role            Role
@@ -86,7 +86,7 @@ model User {
 }
 
 model Profile {
-  userId      Int      @id
+  userId      String   @id
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   displayName String
   avatarUrl   String?
@@ -99,7 +99,7 @@ model Profile {
  * ===== Creator & KYC =====
  */
 model Creator {
-  userId      Int      @id
+  userId      String   @id
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   publicName  String
   bankAccount Json?
@@ -117,9 +117,9 @@ model Creator {
 }
 
 model KycSubmission {
-  id         Int       @id @default(autoincrement())
+  id         String    @id @default(uuid())
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId     Int
+  userId     String
   status     KycStatus
   documents  Json
   reviewedBy Int?
@@ -136,9 +136,9 @@ model KycSubmission {
  * ===== Plans & Subscriptions =====
  */
 model Plan {
-  id              Int      @id @default(autoincrement())
+  id              String   @id @default(uuid())
   creator         Creator  @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
-  creatorId       Int
+  creatorId       String
   name            String
   priceJpy        Int
   description     String?
@@ -156,11 +156,11 @@ model Plan {
 }
 
 model Subscription {
-  id                 Int       @id @default(autoincrement())
+  id                 String    @id @default(uuid())
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId             Int
+  userId             String
   plan               Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
-  planId             Int
+  planId             String
   status             SubStatus
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
@@ -178,14 +178,14 @@ model Subscription {
  * ===== Posts =====
  */
 model Post {
-  id          Int        @id @default(autoincrement())
+  id          String     @id @default(uuid())
   creator     Creator    @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
-  creatorId   Int
+  creatorId   String
   title       String
   bodyMd      String?
   visibility  Visibility
   plan        Plan?      @relation(fields: [planId], references: [id])
-  planId      Int?
+  planId      String?
   isPublished Boolean    @default(false)
   publishedAt DateTime?
   priceJpy    Int?
@@ -201,9 +201,9 @@ model Post {
 }
 
 model PostMedia {
-  id        Int       @id @default(autoincrement())
+  id        String    @id @default(uuid())
   post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  postId    Int
+  postId    String
   mediaType MediaType
   url       String
   sortOrder Int       @default(0)
@@ -216,9 +216,9 @@ model PostMedia {
  */
 model Favorite {
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        Int
+  userId        String
   creator       Creator  @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
-  creatorId     Int
+  creatorId     String
   notifyEnabled Boolean  @default(true)
   createdAt     DateTime @default(now())
 
@@ -229,15 +229,15 @@ model Favorite {
  * ===== Payments & Operational =====
  */
 model Payment {
-  id           Int           @id @default(autoincrement())
+  id           String        @id @default(uuid())
   user         User?         @relation(fields: [userId], references: [id])
-  userId       Int?
+  userId       String?
   creator      Creator?      @relation(fields: [creatorId], references: [userId])
-  creatorId    Int?
+  creatorId    String?
   plan         Plan?         @relation(fields: [planId], references: [id])
-  planId       Int?
+  planId       String?
   post         Post?         @relation(fields: [postId], references: [id])
-  postId       Int?
+  postId       String?
   amountJpy    Int
   kind         PaymentKind
   externalTxId String?       @unique
@@ -252,9 +252,9 @@ model Payment {
 }
 
 model Payout {
-  id          Int          @id @default(autoincrement())
+  id          String       @id @default(uuid())
   creator     Creator      @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
-  creatorId   Int
+  creatorId   String
   amountJpy   Int
   status      PayoutStatus
   requestedAt DateTime     @default(now())
@@ -265,7 +265,7 @@ model Payout {
 }
 
 model WebhookEvent {
-  id             Int       @id @default(autoincrement())
+  id             String    @id @default(uuid())
   provider       String
   eventType      String
   idempotencyKey String?   @unique
