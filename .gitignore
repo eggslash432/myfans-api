@@ -42,6 +42,9 @@ lerna-debug.log*
 .env.production.local
 .env.local
 
+# testfiles
+.test/api_test.json
+
 # temp directory
 .temp
 .tmp

@@ -1,0 +1,12 @@
+@baseUrl = http://localhost:3000
+@token = YOUR_JWT
+
+{{
+  // ✅ JSブロック（先頭 {{ の「次の行」からJS）
+  // 変数はそのまま使える
+  console.info('baseUrl =', baseUrl);        // または console.info(global.baseUrl)
+  exports.authHeader = `Bearer ${token}`;    // ここで作った値は {{authHeader}} で参照可
+}}
+
+GET {{baseUrl}}/auth/me
+Authorization: {{authHeader}}

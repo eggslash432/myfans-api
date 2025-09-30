@@ -1,4 +1,18 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+  "compilerOptions": {
+    "rootDir": "src",       // ソースのルート
+    "outDir": "dist",       // 出力先
+    "removeComments": true,
+    "declaration": false,
+    "sourceMap": true
+  },
+  "include": ["src/**/*"],  // ← これがないと何もビルドされない
+  "exclude": [
+    "node_modules",
+    "test",
+    "dist",
+    "**/*.spec.ts"
+  ]
 }
+
