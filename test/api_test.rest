@@ -6,7 +6,7 @@
 # 4) 各リクエストの上に出る「Send Request」をクリック
 
 @baseUrl = http://localhost:3000
-@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjMzBkOTg0OC0yNjdiLTRiNDEtOTM3ZS03ODI1YzAyZjQ3YWEiLCJlbWFpbCI6InVzZXIxQGV4YW1wbGUuY29tIiwicm9sZSI6ImZhbiIsImlhdCI6MTc1OTIwMjcyMiwiZXhwIjoxNzU5MjA2MzIyfQ.7tEqsL0cvrJeB1jE9u0zLAQ-dHaEi21KBR46vX8T8VY
+@token = 
 
 # ★必要に応じてメモ用変数
 @creatorId = 
