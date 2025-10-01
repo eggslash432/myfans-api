@@ -3,6 +3,7 @@ import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
+import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -17,7 +18,7 @@ export class AuthService {
     if (exists) throw new BadRequestException('既に登録済みのメールです。');
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
-    const user = await this.users.create(dto.email, passwordHash, dto.role);
+    const user = await this.users.create(dto.email, passwordHash, dto.role as Role);
 
     const token = await this.sign(user.id, user.email, user.role);
     return {
