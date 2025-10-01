@@ -1,0 +1,165 @@
+# === MyFans Clone API quick test (httpYac) ===
+# 使い方:
+# 1) VS Code に httpYac REST Client 拡張を入れる
+# 2) 下の @baseUrl を正しい API URL に設定
+# 3) signup でユーザー作成 → login で JWT を取得 → @token にコピー
+# 4) 各リクエストの上に出る「Send Request」をクリック
+
+@baseUrl = http://localhost:3000
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwOWIyMzYxOC04NmRlLTQxMWUtYjE1Yy04MDUyNjBhZDYzMTUiLCJlbWFpbCI6InVzZXIxQGV4YW1wbGUuY29tIiwicm9sZSI6ImNyZWF0b3IiLCJpYXQiOjE3NTkyOTQxOTEsImV4cCI6MTc1OTI5Nzc5MX0.6Ns4uioMwPNuJWGuCEaIwDHH4hLXa5zY6UtU4vG6xp4
+@tokenFan = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiYTA0YzYwZC03MmY2LTQwYTctYTgyOC1hZmM5NjA4MzI1MjQiLCJlbWFpbCI6ImZhbjFAZXhhbXBsZS5jb20iLCJyb2xlIjoiZmFuIiwiaWF0IjoxNzU5Mjk2MjUxLCJleHAiOjE3NTkyOTk4NTF9.py8hH5ckoNJEF5EUbnsPBFB6tTCmK98tZ6PqTVQPYDA
+
+# ★必要に応じてメモ用変数
+@creatorId = 
+@planId = b9bf1413-b31b-4b13-89b3-a09a11f8f344
+@planId_test = b9bf1413-b31b-4b13-89b3-a09a11f8f344
+@postId_free = c9a166f3-6fe4-4df3-acdc-d471a9aaaa48
+@postId_plan = 2e9a8c5b-ed07-42b5-b934-57f7f53cc189
+
+### ユーザー登録 (signup)
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "email": "user1@example.com",
+  "password": "password123",
+  "role": "fan"
+}
+
+### ログイン (login) → アクセストークン取得
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "user1@example.com",
+  "password": "password123"
+}
+
+# レスポンスの access_token をコピーして @token に貼る
+
+### 0) 認証済ユーザー情報確認
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+
+### 1) クリエイター登録/申請
+POST {{baseUrl}}/creators
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "publicName": "Sample Creator",        
+  "displayName": "サンプル太郎",          
+  "bio": "自己紹介です。",                 
+  "bankAccount": {
+    "bankName": "MUFG",
+    "branch": "渋谷支店",
+    "accountType": "ordinary",
+    "accountNumber": "1234567",
+    "accountHolder": "サンプルタロウ"
+  },
+  "kycDocuments": {                      
+    "documentType": "driver_license",
+    "documentNumber": "A123456789",
+    "birthDate": "1990-01-01"
+  }
+}
+
+### 2) 月額プラン作成
+POST {{baseUrl}}/plans
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "スタンダードプラン",
+  "priceJpy": 800,
+  "description": "月4本の限定投稿+DM返信"
+}
+
+### プラン確認
+GET {{baseUrl}}/plans
+Authorization: Bearer {{token}}
+
+### 3) 投稿作成（サブスク会員限定・テキストのみ）
+POST {{baseUrl}}/posts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "初回限定ポスト",
+  "bodyMd": "はじめまして！ここでは限定コンテンツを配信します。",
+  "visibility": "plan",
+  "planId": "{{planId}}"
+}
+
+### 3-2) 投稿作成（無料公開・テキストのみ）
+POST {{baseUrl}}/posts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "無料のお知らせ",
+  "bodyMd": "誰でも見られる無料投稿です。",
+  "visibility": "free"
+}
+
+### 無料投稿作成 (postId_freeをメモしておく)
+POST {{baseUrl}}/posts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "無料テスト投稿",
+  "bodyMd": "これは誰でも見れる投稿です。",
+  "visibility": "free"
+}
+
+### プラン確認 (planId_testをメモしておく)
+GET {{baseUrl}}/plans
+Authorization: Bearer {{token}}
+
+### プラン限定投稿作成 (postId_planをメモしておく)
+POST {{baseUrl}}/posts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "限定投稿テスト",
+  "bodyMd": "この投稿は購読者しか見れません。",
+  "visibility": "plan",
+  "planId": "{{planId_test}}"
+}
+
+### 4-1) 無料投稿の取得（誰でもOK）
+GET {{baseUrl}}/posts/{{postId_free}}
+
+### 4-2) 限定投稿の取得（ログインなし）
+GET {{baseUrl}}/posts/{{postId_plan}}
+
+### 4-3) 限定投稿の取得（ログインあり・非購読者・作成者）
+GET {{baseUrl}}/posts/{{postId_plan}}
+Authorization: Bearer {{token}}
+
+### 4-4) 限定投稿の取得（ログインあり・非購読者・非作成者）
+GET {{baseUrl}}/posts/{{postId_plan}}
+Authorization: Bearer {{tokenFan}}
+
+### 別ユーザーを作る（非購読者）
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+  "email": "fan1@example.com",
+  "password": "password123",
+  "role": "fan"
+}
+
+### ログインしてトークン取得（レスポンスの access_token を @tokenFan にコピー）
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "fan1@example.com",
+  "password": "password123"
+}
+
+
