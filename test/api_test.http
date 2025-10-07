@@ -6,7 +6,7 @@
 # 4) 各リクエストの上に出る「Send Request」をクリック
 
 @baseUrl = http://localhost:3000
-@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwOWIyMzYxOC04NmRlLTQxMWUtYjE1Yy04MDUyNjBhZDYzMTUiLCJlbWFpbCI6InVzZXIxQGV4YW1wbGUuY29tIiwicm9sZSI6ImNyZWF0b3IiLCJpYXQiOjE3NTkyOTQxOTEsImV4cCI6MTc1OTI5Nzc5MX0.6Ns4uioMwPNuJWGuCEaIwDHH4hLXa5zY6UtU4vG6xp4
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwOWIyMzYxOC04NmRlLTQxMWUtYjE1Yy04MDUyNjBhZDYzMTUiLCJlbWFpbCI6InVzZXIxQGV4YW1wbGUuY29tIiwicm9sZSI6ImNyZWF0b3IiLCJpYXQiOjE3NTk3MTU0NDQsImV4cCI6MTc1OTcxOTA0NH0.6CxMudJTmOznEpEJfFr0IzaWd2M1RH_vIlJsrMer7Ps
 @tokenFan = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiYTA0YzYwZC03MmY2LTQwYTctYTgyOC1hZmM5NjA4MzI1MjQiLCJlbWFpbCI6ImZhbjFAZXhhbXBsZS5jb20iLCJyb2xlIjoiZmFuIiwiaWF0IjoxNzU5Mjk2MjUxLCJleHAiOjE3NTkyOTk4NTF9.py8hH5ckoNJEF5EUbnsPBFB6tTCmK98tZ6PqTVQPYDA
 
 # ★必要に応じてメモ用変数
@@ -161,5 +161,8 @@ Content-Type: application/json
   "email": "fan1@example.com",
   "password": "password123"
 }
+
+
+
 
 
