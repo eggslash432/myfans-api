@@ -1,0 +1,47 @@
+
+@baseUrl = http://localhost:3000
+
+@token = 
+
+### テストユーザー１　購読作成用
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "a@example.com",
+  "password": "aaaaaaaa"
+}
+
+### テストユーザー2 フリープラン
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "b@example.com",
+  "password": "bbbbbbbb"
+}
+
+### テストユーザー3 有料プラン
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "c@example.com",
+  "password": "cccccccc"
+}
+
+###
+# 2️⃣ 自分のユーザー情報を取得（JWT確認）
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+###
+# 3️⃣ ユーザーサマリー取得（prefixなし）
+GET {{baseUrl}}/users/me/summary
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+### 購読作成
+POST {{baseUrl}}/subscriptions
+Body: { planId: number }

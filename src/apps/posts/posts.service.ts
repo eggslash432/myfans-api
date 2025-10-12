@@ -1,10 +1,17 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Visibility, SubStatus } from '@prisma/client';
+import { AccessControlService } from '../access-control/access-control.service';
 
 @Injectable()
 export class PostsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private ac: AccessControlService) {}
+
+  async getPost(postId: string, viewerId?: string) {
+    const ok = await this.ac.canViewPost(postId, viewerId);
+    if (!ok) throw new ForbiddenException('購読が必要です');
+    return this.prisma.post.findUnique({ where: { id: postId } });
+  }
 
   async findOne(id: string, viewerUserId?: string) {
     const post = await this.prisma.post.findUnique({ where: { id } });

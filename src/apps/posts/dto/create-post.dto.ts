@@ -1,19 +1,28 @@
-import { IsNotEmpty, IsOptional, IsString, IsEnum } from 'class-validator';
-import { Visibility } from '@prisma/client';
+// src/apps/posts/dto/create-post.dto.ts
+import { IsString, IsEnum, IsOptional, IsArray, IsBoolean, IsInt, Min, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export enum Visibility { free = 'free', paid = 'paid' }
+export enum AgeRating { all = 'all', r18 = 'r18' }
+
+class AccessRulesDto {
+  @IsArray() @IsOptional()
+  allowByPlanIds?: string[] = [];
+
+  @IsBoolean()
+  allowByPpv!: boolean;
+
+  @IsInt() @Min(100) @IsOptional()
+  ppvPriceJpy?: number; // allowByPpv=trueなら必須にしたければカスタムバリデータで
+}
 
 export class CreatePostDto {
-  @IsString()
-  @IsNotEmpty()
-  title: string;
+  @IsString() title!: string;
+  @IsString() body!: string;
 
-  @IsOptional()
-  @IsString()
-  bodyMd?: string;
+  @IsEnum(Visibility) visibility!: Visibility;
+  @IsEnum(AgeRating) ageRating!: AgeRating;
 
-  @IsEnum(Visibility)
-  visibility: Visibility;
-
-  @IsOptional()
-  @IsString()
-  planId?: string;
+  @ValidateNested() @Type(() => AccessRulesDto)
+  accessRules!: AccessRulesDto;
 }

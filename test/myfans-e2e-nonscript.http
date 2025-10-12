@@ -1,0 +1,268 @@
+### =========================================================
+### MyFans E2E（No Script版 / Java不要）
+### 使い方：
+### 1) 下の「手動変数セクション」で REPLACE_ME を空欄 or 値に置換
+### 2) 1つずつ上から実行 ▶
+### 3) レスポンスで得た値を手動変数にコピペし保存（Cmd/Ctrl+S）
+### 4) 次のリクエストを実行
+### ---------------------------------------------------------
+@baseUrl = http://localhost:3000
+@json = application/json
+
+@userEmail = b@example.com
+@userPass  = bbbbbbbb
+@adminEmail = a@example.com
+@adminPass  = aaaaaaaa
+
+
+@userToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3YTZkZDc5ZS01NmY2LTQwZmUtYTNjYi02NmU4ODNlYzI1YzIiLCJlbWFpbCI6ImJAZXhhbXBsZS5jb20iLCJyb2xlIjoiZmFuIiwiaWF0IjoxNzYwMjY3MDYwLCJleHAiOjE3NjAyNzA2NjB9.8obhei08kYq2eliWBqcEbXRbKcNo547rR5RzOIBT2Uk            
+@creatorId = 7a6dd79e-56f6-40fe-a3cb-66e883ec25c2           
+@planId = 0bfd2ec1-1cba-45c6-b563-65a497ba0424                 
+@ppvPostId = REPLACE_ME              
+@planPostId = REPLACE_ME             
+@subCheckoutSessionId = REPLACE_ME   
+@ppvCheckoutSessionId = REPLACE_ME   
+@kycId = REPLACE_ME                  
+
+
+### 1) 一般ユーザー登録（nickname不要）
+POST {{baseUrl}}/auth/signup
+Content-Type: {{json}}
+
+{
+  "email": "{{userEmail}}",
+  "password": "{{userPass}}",
+  "role": "fan"
+}
+
+
+
+### 2) 一般ユーザーログイン（accessToken を @userToken にコピペ）
+POST {{baseUrl}}/auth/login
+Content-Type: {{json}}
+
+{
+  "email": "{{userEmail}}",
+  "password": "{{userPass}}"
+}
+
+
+### 3) クリエイター登録（CreateCreatorDto）
+POST {{baseUrl}}/creators
+Authorization: Bearer {{userToken}}
+Content-Type: {{json}}
+
+{
+  "publicName": "クリエイター太郎",
+  "displayName": "TaroCreator",
+  "bio": "写真とイラストを投稿します。",
+  "bankAccount": {
+    "bankName": "三井住友銀行",
+    "accountNumber": "1234567",
+    "accountHolder": "サトウタロウ"
+  }
+}
+
+### Swaggerの定義を取る（prefixなし）
+GET http://localhost:3000/docs-json
+
+### 4) プラン作成（PlansController_create）
+# A) creatorId を Body に渡すパターン（多くの実装がこれ）
+POST {{baseUrl}}/plans
+Authorization: Bearer {{userToken}}
+Content-Type: {{json}}
+
+{
+  "name": "月額980円プラン",
+  "priceJpy": 980
+}
+
+### 5) クリエイター：PPV投稿（単品購入可）
+POST {{baseUrl}}/creators/me/posts
+Authorization: Bearer {{creatorId}}
+Content-Type: application/json
+
+{
+  "creatorId": "{{creatorId}}",
+  "title": "PPVテスト投稿",
+  "body": "本文だよ",
+  "visibility": "paid",
+  "accessRules": {
+    "allowByPlanIds": [],
+    "allowByPpv": true,
+    "ppvPrice": 300
+  },
+  "ageRating": "all"
+}
+### レスポンス例：{ "id": "post_ppv_1234...", ... }
+### → id を @ppvPostId にコピペ
+
+
+
+### 6) クリエイター：プラン限定投稿
+POST {{baseUrl}}/creators/me/posts
+Authorization: Bearer {{userToken}}
+Content-Type: {{json}}
+
+{
+  "title": "プラン限定投稿",
+  "body": "購読者だけが読める本文",
+  "visibility": "paid",
+  "accessRules": {
+    "allowByPlanIds": [ "{{planId}}" ],
+    "allowByPpv": false
+  },
+  "ageRating": "all"
+}
+### レスポンス例：{ "id": "post_plan_1234...", ... }
+### → id を @planPostId にコピペ
+
+
+
+### 7) 未購入閲覧（PPVは 403 のはず）
+GET {{baseUrl}}/posts/{{ppvPostId}}
+Authorization: Bearer {{userToken}}
+
+
+
+### 8) 未購読閲覧（プラン限定は 403 のはず）
+GET {{baseUrl}}/posts/{{planPostId}}
+Authorization: Bearer {{userToken}}
+
+
+
+### 9) サブスクCheckout作成（レスの id を @subCheckoutSessionId に）
+POST {{baseUrl}}/payments/checkout/sessions
+Authorization: Bearer {{userToken}}
+Content-Type: {{json}}
+
+{
+  "mode": "subscription",
+  "planId": "{{planId}}",
+  "successUrl": "http://localhost:5173/success",
+  "cancelUrl": "http://localhost:5173/cancel"
+}
+### レスポンス例：{ "id": "cs_test_1234...", ... }
+### → id を @subCheckoutSessionId にコピペ
+
+
+
+### 10) [手動: Stripe CLI] Webhook送信（別ターミナルで実行）
+###   stripe listen --forward-to localhost:3000/webhooks/stripe
+###   stripe trigger checkout.session.completed
+###   stripe trigger invoice.payment_succeeded
+### ※ .env の STRIPE_WEBHOOK_SECRET=whsec_xxx を忘れずに
+
+
+
+### 11) 購読一覧の確認（status=active が見えること）
+GET {{baseUrl}}/users/me/subscriptions
+Authorization: Bearer {{userToken}}
+
+
+
+### 12) 購読後の閲覧（プラン限定 → 200 になるはず）
+GET {{baseUrl}}/posts/{{planPostId}}
+Authorization: Bearer {{userToken}}
+
+
+
+### 13) PPV Checkout作成（レスの id を @ppvCheckoutSessionId に）
+POST {{baseUrl}}/payments/checkout/sessions
+Authorization: Bearer {{userToken}}
+Content-Type: {{json}}
+
+{
+  "mode": "payment",
+  "ppvPostId": "{{ppvPostId}}",
+  "successUrl": "http://localhost:5173/success",
+  "cancelUrl": "http://localhost:5173/cancel"
+}
+### レスポンス例：{ "id": "cs_test_ppv_1234...", ... }
+### → id を @ppvCheckoutSessionId にコピペ
+
+
+
+### 14) [手動: Stripe CLI] PPV用イベント
+###   stripe trigger checkout.session.completed
+###   stripe trigger charge.succeeded
+
+
+
+### 15) PPV投稿の閲覧（決済後 → 200 になるはず）
+GET {{baseUrl}}/posts/{{ppvPostId}}
+Authorization: Bearer {{userToken}}
+
+
+
+### 16) KYC提出（レスの id を @kycId に）
+POST {{baseUrl}}/kyc/submit
+Authorization: Bearer {{userToken}}
+Content-Type: {{json}}
+
+{
+  "documentType": "id_card",
+  "frontImage": "s3://stub/front.jpg",
+  "backImage": "s3://stub/back.jpg"
+}
+### レスポンス例：{ "id": "kyc_1234...", ... }
+### → id を @kycId にコピペ
+
+
+
+### 17) 管理者作成 → ログイン（accessToken を @adminToken に）
+POST {{baseUrl}}/auth/signup
+Content-Type: {{json}}
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPass}}",
+  "asAdmin": true
+}
+
+###
+POST {{baseUrl}}/auth/login
+Content-Type: {{json}}
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPass}}"
+}
+### レスポンス例：{ "accessToken": "ey..." }
+### → accessToken を @adminToken にコピペ
+
+
+
+### 18) 管理者：KYC承認
+POST {{baseUrl}}/admin/kyc/{{kycId}}/approve
+Authorization: Bearer {{adminToken}}
+
+
+
+### 19) 出金申請（通常）
+POST {{baseUrl}}/payouts/requests
+Authorization: Bearer {{userToken}}
+Content-Type: {{json}}
+
+{
+  "amount": 5000,
+  "type": "standard"
+}
+
+
+
+### 20) 出金申請（特急：10% + 330円 控除）
+POST {{baseUrl}}/payouts/requests
+Authorization: Bearer {{userToken}}
+Content-Type: {{json}}
+
+{
+  "amount": 10000,
+  "type": "express"
+}
+
+
+
+### 21) （任意）監査ログの確認
+GET {{baseUrl}}/admin/audit-logs?limit=20
+Authorization: Bearer {{adminToken}}

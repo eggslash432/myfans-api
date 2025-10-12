@@ -155,6 +155,12 @@ model Plan {
   @@index([isActive, creatorId])
 }
 
+model WebhookLog {
+  id        String   @id        
+  type      String
+  createdAt DateTime @default(now())
+}
+
 model Subscription {
   id                 String    @id @default(uuid())
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
