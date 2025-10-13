@@ -1,6 +1,6 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Visibility, SubStatus } from '@prisma/client';
+import { Visibility, SubStatus, PaymentStatus,PaymentKind } from '@prisma/client';
 import { AccessControlService } from '../access-control/access-control.service';
 
 @Injectable()
@@ -43,10 +43,28 @@ export class PostsService {
       return post;
     }
 
-    // paid_single : まだ未対応 → 一律禁止（後で実装）
+    // paid_single : PPV購入済みならOK
     if (post.visibility === Visibility.paid_single) {
-      // 例：単品購入の Payment があるか確認する実装に差し替える
-      throw new ForbiddenException('有料単品投稿のアクセス権がありません');
+      if (!viewerUserId) throw new ForbiddenException('ログインが必要です');
+      if (viewerUserId === post.creatorId) return post; // クリエイター本人は常にOK
+
+      const pay = await this.prisma.payment.findFirst({
+        where: {
+          userId: viewerUserId,
+          postId: post.id,
+          status: PaymentStatus.paid,
+          kind: PaymentKind.one_time,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // 金額チェックを入れたい場合（任意）
+      // const enough = !post.priceJpy || (pay?.amountJpy ?? 0) >= post.priceJpy;
+
+      if (!pay /* || !enough */) {
+        throw new ForbiddenException('この投稿を閲覧するには単品購入が必要です');
+      }
+      return post;
     }
 
     // ここに来ない想定
