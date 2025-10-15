@@ -8,11 +8,13 @@ import { PlansModule } from '../plans/plans.module';
 import { PostsModule } from '../posts/posts.module';
 import { UsersMeSummaryModule } from '../users/me/summary/users-me-summary.module';
 import { PaymentsModule } from '../payments/payments.module';
+import configuration from '../../config/configuration';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      load:[configuration],
       envFilePath: ['.env', '.env.local'], // 必要なら複数
     }), // ← これで process.env を読み込む
     UsersModule,
