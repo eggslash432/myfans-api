@@ -3,17 +3,17 @@
 @json = application/json
 
 # 認証用
-@email = user2@example.com
+@email = user3@example.com
 @pass  = testtest
 @role  = fan            
 
-@token =  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMzlmZTViOC05ZGI5LTQ5OGYtOWQyZS1lNTRiYzdkNzAzZGYiLCJlbWFpbCI6InVzZXIyQGV4YW1wbGUuY29tIiwicm9sZSI6ImNyZWF0b3IiLCJpYXQiOjE3NjA0OTYzNjgsImV4cCI6MTc2MDQ5OTk2OH0.H8zx3BzNZsCJnWu6ClsIcGk-DMKXfvoU8cqIDbGRcOY
+@token_fan =  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzYjk2ZWE3MS05MThiLTQ3ZjAtYmUyMi1iYWJhZThiMzlkNjAiLCJlbWFpbCI6InVzZXIzQGV4YW1wbGUuY29tIiwicm9sZSI6ImZhbiIsImlhdCI6MTc2MDUwNDg1OCwiZXhwIjoxNzYwNTA4NDU4fQ.JGHD3G1PZpWvTgNSlNEQj2Fadk9JRG7izLtWwUhkhJE
 
 @email_creator = creator1@example.com
 @pass_creator  = testtest
 @role_creator  = creator
 
-@token_creator = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkOTBiNDA0Zi0wYzk1LTQ5ZjEtODNhYy1hNTFhMTk4NDEzYzMiLCJlbWFpbCI6ImNyZWF0b3IxQGV4YW1wbGUuY29tIiwicm9sZSI6ImNyZWF0b3IiLCJpYXQiOjE3NjA0OTM5NjgsImV4cCI6MTc2MDQ5NzU2OH0.S3Is8TSsxYy-INnth5drBY25Gbz5c5qQ_yRC6B_GbYE
+@token_creator = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkOTBiNDA0Zi0wYzk1LTQ5ZjEtODNhYy1hNTFhMTk4NDEzYzMiLCJlbWFpbCI6ImNyZWF0b3IxQGV4YW1wbGUuY29tIiwicm9sZSI6ImNyZWF0b3IiLCJpYXQiOjE3NjA1MDE5ODEsImV4cCI6MTc2MDUwNTU4MX0.hE_6k5aA0GhGxtwDJrNmWESWmtqevZP8LuFuyP3FC5A
 @creatorId =  d90b404f-0c95-49f1-83ac-a51a198413c3
 
 @ppvPostId =  1d5db5ae-d3ce-47bc-8988-71cb09713d4c
@@ -83,26 +83,19 @@ Content-Type: {{json}}
   "priceJpy": 1980
 }
 
-### B) もし A で 400（creator 周り）になるなら、creatorId を付けて試す（実装依存）
-# POST {{host}}/plans
-# Authorization: Bearer {{token}}
-# Content-Type: {{json}}
-#
-# {
-#   "creatorId": "{{creatorId}}",
-#   "name": "月額980円プラン",
-#   "priceJpy": 980
-# }
-
 
 ### 5) プラン一覧（自分のプラン）
 GET {{host}}/plans
 Authorization: Bearer {{token_creator}}
 
+### 投稿一覧
+GET {{host}}/creators/me/posts
+Authorization: Bearer {{token_creator}}
+
 ###
 # 2️⃣ 閲覧用ユーザー情報を取得（JWT確認）
 GET {{host}}/auth/me
-Authorization: Bearer {{token}}
+Authorization: Bearer {{token_fan}}
 Content-Type: application/json
 
 ###
@@ -111,13 +104,40 @@ GET {{host}}/auth/me
 Authorization: Bearer {{token_creator}}
 Content-Type: application/json
 
-### 6) PPV投稿の閲覧（作成APIは未実装のため、seed 等で id がある前提）
-# 未購入時は 403、解放後は 200
-GET {{host}}/posts/{{ppvPostId}}
-Authorization: Bearer {{token}}
-
-### PPV購入状態の検証（購入済みユーザーなら 200）
-GET {{host}}/posts/{{ppvPostId}}
-Authorization: Bearer {{token}} 
+### サブスクCheckoutセッション作成（プラン加入）
+POST {{host}}/payments/checkout/session
+Authorization: Bearer {{token_fan}}       
 Content-Type: application/json
 
+{
+  "planId": "e18cead5-813b-48ca-ac23-ab7c8816a2f2",
+  "successUrl": "https://example.com/success",
+  "cancelUrl": "https://example.com/cancel"
+}
+
+###ヘルス&プレフィックス確認
+GET {{host}}/health
+
+### 反映確認（購読一覧 & サマリー）
+GET {{host}}/subscriptions
+Authorization: Bearer {{token_fan}}
+
+### サマリー
+GET {{host}}/users/me/summary
+Authorization: Bearer {{token_fan}}
+
+### 2) Webhook（テスト用）
+POST {{host}}/payments/webhooks/stripe
+Content-Type: application/json
+Stripe-Signature: test
+
+{
+  "id": "evt_test_sub_001",
+  "type": "checkout.session.completed",
+  "data": { "object": {
+    "id": "cs_test_001",
+    "mode": "subscription",
+    "subscription": "sub_test_001",
+    "metadata": { "userId": "3b96ea71-918b-47f0-be22-babae8b39d60", "planId": "e18cead5-813b-48ca-ac23-ab7c8816a2f2" }
+  } }
+}

@@ -1,16 +1,29 @@
-import { Controller, Post, Param, UseGuards, Req } from '@nestjs/common';
-import { JwtAuthGuard } from 'src/apps/auth/jwt-auth.guard';
-import { SubscriptionsService } from './subscriptions.service';
+// src/apps/subscriptions/subscriptions.controller.ts
+import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
-@Controller('subscriptions')
 @UseGuards(JwtAuthGuard)
+@Controller('subscriptions')
 export class SubscriptionsController {
-  constructor(private readonly subs: SubscriptionsService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  @Post(':id/cancel')
-  async cancel(@Req() req, @Param('id') id: string) {
-    const userId: string = req.user.id ?? req.user.sub;
-    return this.subs.cancelSubscription(userId, id);
+  @Get()
+  async listMine(@Req() req: any) {
+    const userId: string = req.user?.id ?? req.user?.sub;
+    // Prismaのモデル名・フィールドはあなたのschemaに合わせて調整
+    return this.prisma.subscription.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        planId: true,
+        status: true,
+        currentPeriodStart: true,
+        currentPeriodEnd: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 }
-

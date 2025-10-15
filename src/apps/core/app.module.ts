@@ -9,6 +9,7 @@ import { PostsModule } from '../posts/posts.module';
 import { UsersMeSummaryModule } from '../users/me/summary/users-me-summary.module';
 import { PaymentsModule } from '../payments/payments.module';
 import configuration from '../../config/configuration';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import configuration from '../../config/configuration';
     PostsModule,
     UsersMeSummaryModule,
     PaymentsModule,
+    SubscriptionsModule,
   ],
 })
 export class AppModule {}
