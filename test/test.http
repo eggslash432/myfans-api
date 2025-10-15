@@ -1,12 +1,55 @@
-@baseUrl = http://localhost:3000
-@token = YOUR_JWT
+@token_fan = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4M2JjNmYwOS05NDhmLTQ0OWQtYmU3ZS00YWQxYTk5NDkxMjkiLCJlbWFpbCI6InVzZXIxQGV4YW1wbGUuY29tIiwicm9sZSI6ImZhbiIsImlhdCI6MTc2MDUwMTAwNSwiZXhwIjoxNzYwNTA0NjA1fQ.Owy0NcuSYBwvFV5in9rLzWn3Kxo4BGkZaWnkPV_T5gk
+@token_creator = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhNzY1MjlmYS04NDQ1LTQ2YmUtYTM3MC03MjI5YTM3Njk4ZDMiLCJlbWFpbCI6ImNyZWF0b3IyQGV4YW1wbGUuY29tIiwicm9sZSI6ImNyZWF0b3IiLCJpYXQiOjE3NjA1MDA4ODgsImV4cCI6MTc2MDUwNDQ4OH0.Hp0RGysJ8bO39IFEOSpPwyBBQPjx261vndJbuNdp84E
 
-{{
-  // ✅ JSブロック（先頭 {{ の「次の行」からJS）
-  // 変数はそのまま使える
-  console.info('baseUrl =', baseUrl);        // または console.info(global.baseUrl)
-  exports.authHeader = `Bearer ${token}`;    // ここで作った値は {{authHeader}} で参照可
-}}
+### サインアップ（creator）
+POST https://myfans-api.onrender.com/auth/signup
+Content-Type: application/json
 
-GET {{baseUrl}}/auth/me
-Authorization: {{authHeader}}
+{ "email": "creator2@example.com", "password": "testtest", "role": "creator" }
+
+### クリエイターログイン
+POST https://myfans-api.onrender.com/auth/login
+Content-Type: application/json
+
+{ "email": "creator2@example.com", "password": "testtest" }
+
+### サインアップ（fan）
+POST https://myfans-api.onrender.com/auth/signup
+Content-Type: application/json
+
+{ "email": "user1@example.com", "password": "testtest", "role": "fan" }
+
+### ログイン
+POST https://myfans-api.onrender.com/auth/login
+Content-Type: application/json
+
+{ "email": "user1@example.com", "password": "testtest" }
+
+### クリエイター登録
+POST https://myfans-api.onrender.com/creators
+Authorization: Bearer {{token_creator}}
+Content-Type: application/json
+
+{ "publicName": "クリエイター次郎", "displayName": "TaroCreator", "bio": "自己紹介" }
+
+### プラン作成（priceJpy だけでもOK）
+POST https://myfans-api.onrender.com/plans
+Authorization: Bearer {{token_creator}}
+Content-Type: application/json
+
+{ "name": "月額980円プラン", "priceJpy": 980 }
+
+### 自分のプラン一覧（planId を控える）
+GET https://myfans-api.onrender.com/plans
+Authorization: Bearer {{token_creator}}
+
+### サブスクCheckoutセッション作成（プラン加入）
+POST https://myfans-api.onrender.com/payments/checkout/session
+Authorization: Bearer {{token_fan}}       
+Content-Type: application/json
+
+{
+  "planId": "7230a211-e2be-4388-8b69-9734a2fd33c0",
+  "successUrl": "https://example.com/success",
+  "cancelUrl": "https://example.com/cancel"
+}

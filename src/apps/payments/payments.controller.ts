@@ -1,75 +1,86 @@
-import 'dotenv/config';
-import {
-  Controller,
-  Post,
-  Req,
-  HttpCode,
-  Headers,
-  BadRequestException,
-} from '@nestjs/common';
+// payments.controller.ts
+import { BadRequestException, Body, Controller, Post, Req } from '@nestjs/common';
 import Stripe from 'stripe';
 import { PrismaService } from '../prisma/prisma.service';
 
+class CreateCheckoutDto {
+  planId?: string;   // サブスク用
+  postId?: string;   // PPV用
+  successUrl!: string;
+  cancelUrl!: string;
+}
+
 @Controller('payments')
 export class PaymentsController {
+  private stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+
   constructor(private readonly prisma: PrismaService) {}
 
-  @Post('webhooks/stripe')
-  @HttpCode(200)
-  async handleStripeWebhook(
-    @Req() req: any,
-    @Headers('stripe-signature') sig: string,
-  ) {
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-    let event: Stripe.Event;
+  @Post('checkout/session')
+  async createCheckout(@Req() req: any, @Body() dto: CreateCheckoutDto) {
+    const userId = req.user?.id;
+    if (!userId) throw new BadRequestException('Unauthenticated');
+    if (!dto.planId && !dto.postId) throw new BadRequestException('planId or postId required');
 
-    try {
-      event = stripe.webhooks.constructEvent(
-        req.rawBody,
-        sig,
-        process.env.STRIPE_WEBHOOK_SECRET!,
-      );
-    } catch (err: any) {
-      console.error('❌ Webhook verify failed', err.message);
-      throw new BadRequestException(`Webhook Error: ${err.message}`);
-    }
+    let priceId: string;
+    let mode: 'payment' | 'subscription';
 
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const metadata = session.metadata ?? {};
-      const postId = metadata.postId;
-      const userId = metadata.userId;
+    if (dto.planId) {
+      // ===== サブスク（planId）=====
+      const plan = await this.prisma.plan.findUnique({ where: { id: dto.planId } });
+      if (!plan) throw new BadRequestException('plan not found');
 
-      const amount = (session.amount_total ?? 0) / 100;
-      const externalTxId = session.id; // ← フィールド名を externalTxId に統一
+      // 既にStripeのPriceが紐づいていればそれを使用
+      if (plan.externalPriceId) {
+        priceId = plan.externalPriceId;
+      } else {
+        // なければ作成（Product + recurring Price）
+        const product = await this.stripe.products.create({
+          name: plan.name,
+          metadata: { planId: plan.id },
+        });
+        const price = await this.stripe.prices.create({
+          product: product.id,
+          currency: 'jpy',
+          unit_amount: plan.priceJpy * 100,
+          recurring: { interval: 'month' }, // 月額
+        });
+        priceId = price.id;
 
-      // DBへ保存
-      await this.prisma.payment.upsert({
-        where: { externalTxId }, // ← フィールド名修正
-        update: {},
-        create: {
-          userId,
-          postId,
-          amountJpy: amount,
-          status: 'paid',
-          externalTxId,          // ← 修正済み
-          paidAt: new Date(),
-          kind: 'one_time',
-        },
-      });
-
-      // 投稿アクセス権付与
-      if (postId && userId) {
-        await this.prisma.postAccess.upsert({
-          where: { userId_postId: { userId, postId } },
-          update: {},
-          create: { userId, postId },
+        // できたPriceをDBに保存（externalPriceId を使う）
+        await this.prisma.plan.update({
+          where: { id: plan.id },
+          data: { externalPriceId: priceId },
         });
       }
+      mode = 'subscription';
+    } else {
+      // ===== PPV（postId）=====
+      const post = await this.prisma.post.findUnique({ where: { id: dto.postId! } });
+      if (!post?.priceJpy) throw new BadRequestException('ppv post/price not found');
 
-      console.log(`✅ Payment saved & access granted: user=${userId}, post=${postId}`);
+      // 都度Price（固定額/単発）
+      const price = await this.stripe.prices.create({
+        currency: 'jpy',
+        unit_amount: post.priceJpy * 100,
+        product_data: { name: `PPV: ${post.title}`, metadata: { postId: post.id } },
+      });
+      priceId = price.id;
+      mode = 'payment';
     }
 
-    return { received: true };
+    const session = await this.stripe.checkout.sessions.create({
+      mode,
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: dto.successUrl,
+      cancel_url: dto.cancelUrl,
+      metadata: {
+        userId,
+        planId: dto.planId ?? '',
+        postId: dto.postId ?? '',
+      },
+    });
+
+    return { id: session.id, url: session.url };
   }
 }

@@ -7,14 +7,16 @@
 @pass  = testtest
 @role  = fan            
 
-@token =  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMzlmZTViOC05ZGI5LTQ5OGYtOWQyZS1lNTRiYzdkNzAzZGYiLCJlbWFpbCI6InVzZXIyQGV4YW1wbGUuY29tIiwicm9sZSI6ImZhbiIsImlhdCI6MTc2MDMzMjQzOCwiZXhwIjoxNzYwMzM2MDM4fQ.f8NeZ38dYH6OmOmgpb5dqG5h_G1zATk53MjI3cVbx-Y
+@token =  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMzlmZTViOC05ZGI5LTQ5OGYtOWQyZS1lNTRiYzdkNzAzZGYiLCJlbWFpbCI6InVzZXIyQGV4YW1wbGUuY29tIiwicm9sZSI6ImNyZWF0b3IiLCJpYXQiOjE3NjA0OTYzNjgsImV4cCI6MTc2MDQ5OTk2OH0.H8zx3BzNZsCJnWu6ClsIcGk-DMKXfvoU8cqIDbGRcOY
 
 @email_creator = creator1@example.com
 @pass_creator  = testtest
 @role_creator  = creator
 
-@token_creator = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkOTBiNDA0Zi0wYzk1LTQ5ZjEtODNhYy1hNTFhMTk4NDEzYzMiLCJlbWFpbCI6ImNyZWF0b3IxQGV4YW1wbGUuY29tIiwicm9sZSI6ImNyZWF0b3IiLCJpYXQiOjE3NjAzMjUzOTAsImV4cCI6MTc2MDMyODk5MH0.WyvIi9ZcnFrKJo2PJDd2A8CeITFETHc0EjgouzIZ_xE
+@token_creator = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkOTBiNDA0Zi0wYzk1LTQ5ZjEtODNhYy1hNTFhMTk4NDEzYzMiLCJlbWFpbCI6ImNyZWF0b3IxQGV4YW1wbGUuY29tIiwicm9sZSI6ImNyZWF0b3IiLCJpYXQiOjE3NjA0OTM5NjgsImV4cCI6MTc2MDQ5NzU2OH0.S3Is8TSsxYy-INnth5drBY25Gbz5c5qQ_yRC6B_GbYE
+@creatorId =  d90b404f-0c95-49f1-83ac-a51a198413c3
 
+@ppvPostId =  1d5db5ae-d3ce-47bc-8988-71cb09713d4c
 # Stripe Webhook は /payments/webhook
 ### =========================
 
@@ -111,7 +113,11 @@ Content-Type: application/json
 
 ### 6) PPV投稿の閲覧（作成APIは未実装のため、seed 等で id がある前提）
 # 未購入時は 403、解放後は 200
-GET {{host}}/posts/1d5db5ae-d3ce-47bc-8988-71cb09713d4c
+GET {{host}}/posts/{{ppvPostId}}
 Authorization: Bearer {{token}}
 
+### PPV購入状態の検証（購入済みユーザーなら 200）
+GET {{host}}/posts/{{ppvPostId}}
+Authorization: Bearer {{token}} 
+Content-Type: application/json
 
