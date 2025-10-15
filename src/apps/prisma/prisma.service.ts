@@ -1,9 +1,9 @@
 // src/prisma/prisma.service.ts
-import { INestApplication, Injectable, OnModuleInit } from '@nestjs/common';
+import { INestApplication, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit {
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
     super({
       // ← これだけでクエリ・警告・情報・エラーが標準出力に出ます（所要ms含む）
@@ -20,5 +20,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
     process.on('beforeExit', async () => {
       await app.close();
     });
+  }
+
+  async onModuleDestroy() {
+    await this.$disconnect();
   }
 }

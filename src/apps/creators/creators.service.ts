@@ -1,11 +1,24 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCreatorDto } from './dto/create-creator.dto';
 import { KycStatus, Role } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import Stripe from 'stripe';
 
 @Injectable()
 export class CreatorsService {
-  constructor(private prisma: PrismaService) {}
+  private stripe: Stripe;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {
+    const key = this.config.get<string>('STRIPE_SECRET_KEY');
+    if (!key) {
+      throw new Error('STRIPE_SECRET_KEY is not set');
+    }
+    this.stripe = new Stripe(key);
+  }
 
   async applyCreator(userIdRaw: string, dto: CreateCreatorDto) {
     const userId = userIdRaw;
@@ -69,5 +82,25 @@ export class CreatorsService {
     });
 
     return creator;
+  }
+
+  async createSubscriptionCheckout(creatorId: string, planId: string) {
+    const plan = await this.prisma.plan.findUnique({ where: { id: planId } });
+    if (!plan || plan.creatorId !== creatorId) throw new NotFoundException('Plan not found');
+
+    const priceId = plan.externalPriceId; // ← Prismaの型に存在するフィールド名
+    if (!priceId) throw new NotFoundException('externalPriceId (Stripe price) missing');
+
+    const session = await this.stripe.checkout.sessions.create({
+      mode: 'subscription',
+      success_url: `${process.env.APP_ORIGIN}/mypage?result=success`,
+      cancel_url: `${process.env.APP_ORIGIN}/creator/${creatorId}/plans?cancelled=1`,
+      line_items: [{ price: priceId, quantity: 1 }],
+      customer_email: undefined, // 既存Customerに紐付けるなら customer を指定
+      // customer: 'cus_xxx',
+      metadata: { creatorId, planId },
+    });
+
+    return session.url!; // これをフロントへ返す
   }
 }

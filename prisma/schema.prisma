@@ -217,6 +217,14 @@ model PostMedia {
   @@index([postId])
 }
 
+model PostAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  expiresAt DateTime?
+  @@unique([userId, postId])
+}
+
 /**
  * ===== Social =====
  */

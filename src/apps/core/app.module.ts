@@ -11,7 +11,10 @@ import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }), // ← これで process.env を読み込む
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['.env', '.env.local'], // 必要なら複数
+    }), // ← これで process.env を読み込む
     UsersModule,
     AuthModule,
     CreatorsModule,

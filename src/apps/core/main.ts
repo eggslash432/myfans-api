@@ -11,10 +11,11 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
 
   app.enableCors({
-    origin: 'http://localhost:5173', // フロントのURL
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    allowedHeaders: 'Content-Type, Authorization',
+    origin: ['http://localhost:5173'],
     credentials: false,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['set-cookie'],
   });
 
   // ★ Stripe Webhook は JSON ではなく raw body で受ける
@@ -29,7 +30,7 @@ async function bootstrap() {
   const doc = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, doc);
 
-  await app.listen(3000);
+  await app.listen(3001);
 }
 bootstrap();
 

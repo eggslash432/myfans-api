@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // seed用に src 制約を外す
+    "rootDir": ".",
+    "outDir": "./dist-seed",
+    // Node用の型
+    "types": ["node"],
+    // CommonJSとして実行（package.jsonに "type": "module" が無いため）
+    "module": "commonjs",
+    "moduleResolution": "node"
+  },
+  "include": ["scripts/**/*.ts", "prisma/**/*.ts", "seed-dev.ts"]
+}
