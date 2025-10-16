@@ -43,6 +43,6 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, doc);
 
   // ★ ポート待受は１回だけ
-  await app.listen(process.env.PORT || 3001);
+  await app.listen(process.env.PORT || 3000);
 }
 bootstrap();
