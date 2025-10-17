@@ -16,6 +16,7 @@ import { PostsService } from './posts.service';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { PaymentKind, PaymentStatus } from '@prisma/client';
 
 @Controller('posts')
 export class PostsController {
@@ -24,12 +25,86 @@ export class PostsController {
     private readonly prisma: PrismaService,
   ) {}
 
-  // ログイン任意
-  @UseGuards(OptionalJwtAuthGuard)
+  // 新規: 自分の投稿一覧
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async myPosts(@Req() req: any) {
+    const userId = req.user?.sub;
+    if (!userId) return [];
+
+    const posts = await this.prisma.post.findMany({
+      where: { creatorId: userId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        visibility: true,
+        priceJpy: true,
+        isPublished: true,
+        publishedAt: true,
+        createdAt: true,
+      },
+    });
+
+    return { items: posts };
+  }
+
+  @UseGuards(OptionalJwtAuthGuard) // 未ログインでもOKにする
   @Get(':id')
   async findOne(@Param('id') id: string, @Req() req: any) {
-    const viewerId: string | undefined = req.user?.id ?? req.user?.sub;
-    return this.posts.getPost(id, viewerId);
+    const viewerId: string | undefined = req.user?.sub ?? req.user?.id; // どちらでも取れるように
+    const now = new Date();
+
+    const post = await this.prisma.post.findUnique({
+      where: { id },
+      select: {
+        id: true, title: true, bodyMd: true, visibility: true,
+        priceJpy: true, isPublished: true, publishedAt: true,
+        creatorId: true, creator: { select: { userId: true } },
+      },
+    });
+    if (!post) throw new NotFoundException('post not found');
+
+    // 作者本人は常に可
+    if (viewerId && viewerId === post.creatorId) return post;
+
+    // 未公開は作者以外見れない
+    if (!post.isPublished) throw new ForbiddenException('この投稿は未公開です');
+
+    // 無料は誰でも可
+    if (post.visibility === 'free') return post;
+
+    // ここから有料
+    if (!viewerId) throw new ForbiddenException('購読/購入が必要です');
+
+    // 購読者チェック（テーブル名/フィールドはプロジェクトに合わせて調整）
+    const sub = await this.prisma.subscription.findFirst({
+      where: {
+        userId: viewerId,
+        status: 'active',
+        plan :{
+          creatorId: post.creatorId,
+        },
+        currentPeriodStart: { lte: now },
+        currentPeriodEnd:   { gte: now },
+      },
+      select: { id: true },
+    });
+
+    // PPV購入チェック（支払いテーブル名/カラム名は合わせて）
+    const ppv = await this.prisma.payment.findFirst({
+      where: {
+        userId: viewerId,
+        postId: post.id,
+        status: PaymentStatus.paid,
+        kind: PaymentKind.one_time, // or method: 'ppv'
+      },
+      select: { id: true },
+    });
+
+    if (sub || ppv) return post;
+
+    throw new ForbiddenException('この投稿を閲覧する権限がありません');
   }
 
   // 公開フィード（新着投稿）
