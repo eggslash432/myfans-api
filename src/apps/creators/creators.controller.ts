@@ -1,10 +1,14 @@
 import {
   Controller, Get, Post, Body, UseGuards, Request, Param, NotFoundException,
+  ForbiddenException,
+  UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatorsService } from './creators.service';
-import { CreateCreatorDto } from './dto/create-creator.dto';
+import { CreateCreatorDto, Visibility } from './dto/create-creator.dto';
+import { CreatePostDto } from '../posts/dto/create-post.dto';
 
 @Controller('creators')
 export class CreatorsController {
@@ -112,6 +116,45 @@ export class CreatorsController {
     }));
     return { items };
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/posts')
+  async createMyPost(@Request() req, @Body() dto: CreatePostDto) {
+    const userId: string | undefined = req.user?.sub;
+    const role: string | undefined = req.user?.role;
+
+    if (!userId) throw new UnauthorizedException('JWTが無効です');        // ← 401
+    if (role !== 'creator') throw new ForbiddenException('クリエイターのみ投稿可能です'); // ← 403
+
+    const creator = await this.prisma.creator.findUnique({ where: { userId } });
+    if (!creator) throw new ForbiddenException('クリエイター登録が必要です');          // ← 403（原因特定しやすく）
+
+    if ((dto.visibility === Visibility.plan || dto.visibility === Visibility.paid_single) && !dto.priceJpy) {
+      throw new BadRequestException('有料/PPV は price が必要です');                // ← 400
+    }
+
+    const post = await this.prisma.post.create({
+      data: {
+        creatorId: userId,
+        title: dto.title,
+        bodyMd: dto.body ?? '',
+        visibility: dto.visibility,          // 'free' | 'paid' | 'ppv'
+        priceJpy: dto.priceJpy ?? null,
+        isPublished: dto.status === 'published',
+        publishedAt: dto.status === 'published' ? new Date() : null,
+      },
+      select: { id: true, title: true, visibility: true, priceJpy: true, isPublished: true, publishedAt: true },
+    });
+
+    return {
+      id: post.id,
+      title: post.title,
+      isFree: post.visibility === 'free',
+      price: post.priceJpy ?? null,
+      published: post.isPublished,
+      publishedAt: post.publishedAt,
+    };
+  }  
 
   @Post(':creatorId/plans/:planId/checkout')
   async createCheckout(

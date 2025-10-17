@@ -36,6 +36,11 @@ enum Visibility {
   paid_single
 }
 
+enum AgeRating{
+  all
+  r18
+}
+
 enum MediaType {
   image
   video
@@ -194,6 +199,7 @@ model Post {
   planId      String?
   isPublished Boolean    @default(false)
   publishedAt DateTime?
+  ageRating   AgeRating  @default(all)
   priceJpy    Int?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt

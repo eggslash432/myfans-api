@@ -29,16 +29,17 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     const user = await this.users.findByEmail(dto.email);
-    if (!user) throw new UnauthorizedException('メールまたはパスワードが不正です。');
+    if (!user) throw new UnauthorizedException('Invalid credentials');
 
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!ok) throw new UnauthorizedException('メールまたはパスワードが不正です。');
+    if (!ok) throw new UnauthorizedException('Invalid credentials');
 
-    const token = await this.sign(user.id, user.email, user.role);
-    return {
-      access_token: token,
-      user: { id: user.id, email: user.email, role: user.role },
-    };
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    const access_token = await this.jwt.signAsync(payload, { expiresIn: '7d' });
+
+    // omit sensitive fields when returning
+    const { passwordHash, ...safeUser } = user;
+    return { user: safeUser, access_token };
   }
 
   async me(payload: { sub: string; email: string; role: string }) {
