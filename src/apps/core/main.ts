@@ -15,7 +15,10 @@ async function bootstrap() {
 
   // CORS（必要に応じてステージングのフロントURLを追加）
   app.enableCors({
-    origin: ['http://localhost:5173'], // 'https://myfans-frontend-stg.vercel.app' なども追加可
+    origin: [
+      'http://localhost:5173',
+      'https://myfans-frontend.onrender.com',
+    ], // 'https://myfans-frontend-stg.vercel.app' なども追加可
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
