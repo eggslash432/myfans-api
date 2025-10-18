@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
@@ -10,21 +11,35 @@ import * as bcrypt from 'bcrypt';
 export class AuthService {
   constructor(
     private readonly users: UsersService,
+    private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
   ) {}
 
+  // src/apps/auth/auth.service.ts（抜粋・追加）
   async signup(dto: SignupDto) {
     const exists = await this.users.findByEmail(dto.email);
-    if (exists) throw new BadRequestException('既に登録済みのメールです。');
+    if (exists) throw new BadRequestException('既に登録済みのメールです');
 
-    const passwordHash = await bcrypt.hash(dto.password, 12);
-    const user = await this.users.create(dto.email, passwordHash, dto.role as Role);
+    const hash = await bcrypt.hash(dto.password, 10);
+    const user = await this.users.create(dto.email, hash, dto.role as Role);
 
-    const token = await this.sign(user.id, user.email, user.role);
-    return {
-      access_token: token,
-      user: { id: user.id, email: user.email, role: user.role },
-    };
+    // ★ ここが重要：Creator と Profile を保証
+    if (user.role === 'creator') {
+      await this.prisma.creator.upsert({
+        where: { userId: user.id },
+        update: {},
+        create: { userId: user.id, publicName: '', isListed: false },
+      });
+    }
+    await this.prisma.profile.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: { userId: user.id, displayName: dto.email.split('@')[0] },
+    });
+
+    const access_token = await this.sign(user.id, user.email, user.role);
+    const { passwordHash, ...safeUser } = user;
+    return { user: safeUser, access_token };
   }
 
   async login(dto: LoginDto) {

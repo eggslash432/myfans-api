@@ -36,7 +36,7 @@ enum Visibility {
   paid_single
 }
 
-enum AgeRating{
+enum AgeRating {
   all
   r18
 }
@@ -113,7 +113,7 @@ model Creator {
   updatedAt   DateTime @updatedAt
 
   plans    Plan[]
-  posts    Post[]
+  posts    Post[]     @relation("CreatorPosts")
   payouts  Payout[]
   Favorite Favorite[]
   Payment  Payment[]
@@ -161,7 +161,7 @@ model Plan {
 }
 
 model WebhookLog {
-  id        String   @id        
+  id        String   @id
   type      String
   createdAt DateTime @default(now())
 }
@@ -190,8 +190,8 @@ model Subscription {
  */
 model Post {
   id          String     @id @default(uuid())
-  creator     Creator    @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
   creatorId   String
+  creator     Creator    @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
   title       String
   bodyMd      String?
   visibility  Visibility
@@ -224,10 +224,11 @@ model PostMedia {
 }
 
 model PostAccess {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
   postId    String
   expiresAt DateTime?
+
   @@unique([userId, postId])
 }
 
