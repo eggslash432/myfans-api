@@ -12,10 +12,12 @@ import { JwtStrategy } from './jwt.strategy';
     UsersModule,
     ConfigModule,
     JwtModule.registerAsync({
+      imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (cfg: ConfigService) => ({
         secret: cfg.get<string>('JWT_SECRET'),
-        signOptions: { expiresIn: cfg.get<string>('JWT_EXPIRES_IN') ?? '3600s' },
+        // 7日(= 604800秒)。envに数値で入れてもOK。
+        signOptions: { expiresIn: Number(cfg.get('JWT_EXPIRES_IN') ?? 60 * 60 * 24 * 7) },
       }),
     }),
   ],
