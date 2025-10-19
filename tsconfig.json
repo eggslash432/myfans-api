@@ -1,6 +1,8 @@
 {
   "compilerOptions": {
     "module": "nodenext",
+    "strict": true,
+    "strictPropertyInitialization": false,  
     "moduleResolution": "nodenext",
     "resolvePackageJsonExports": true,
     "esModuleInterop": true,
@@ -24,6 +26,6 @@
     "noFallthroughCasesInSwitch": false,
     "types": ["node"],
   },
-  "include": ["src/**/*"],       // ← test を含めない
+  "include": ["src/**/*"],       
   "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
 }
