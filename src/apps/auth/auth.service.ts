@@ -12,6 +12,10 @@ export class AuthService {
     private readonly prisma: PrismaService
   ) {}
 
+  private normalizeRole(input?: 'fan'|'creator'): Role {
+    return input === 'creator' ? Role.creator : Role.fan; // fan を既定に
+  }
+
   /** サインアップ実装 */
   async signup(dto: SignupDto) {
     const email = dto.email.toLowerCase().trim();
@@ -19,7 +23,7 @@ export class AuthService {
     if (exists) throw new BadRequestException('このメールアドレスは既に登録されています');
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const role = dto.role;
+    const role = this.normalizeRole(dto.role);
 
     // ユーザー作成
     const user = await this.prisma.user.create({
@@ -51,18 +55,27 @@ export class AuthService {
     };
   }  
 
+  /** ←← ここを全面差し替え */
   async login(dto: { email: string; password: string }) {
-    // 仮のユーザー検証（本来はDB照合）
-    const user = { id: 1, email: dto.email, role: 'creator' };
+    const email = dto.email.toLowerCase().trim();
 
-    // ここでパスワード検証を入れる
-    // const valid = await bcrypt.compare(dto.password, user.passwordHash);
-    // if (!valid) throw new UnauthorizedException('Invalid credentials');
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, role: true, passwordHash: true, isActive: true },
+    });
 
-    const access_token = await this.signAccessToken(user.id, user.role, user.email);
-    const refresh_token = await this.signRefreshToken(user.id);
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    const ok = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!ok) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
-    return { access_token, refresh_token, user };
+    const access_token  = await this.signAccessToken(user.id, user.role, user.email);
+    const refresh_token = await this.signRefreshToken(user.id, user.role, user.email);
+
+    return { access_token, refresh_token, user: { id: user.id, email: user.email, role: user.role } };
   }
 
   async rotateAccessToken(refresh_token: string) {
