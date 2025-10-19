@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { PaymentKind, PaymentStatus } from '@prisma/client';
 import { PrismaService } from 'src/apps/prisma/prisma.service';
 
 @Injectable()
@@ -52,7 +53,7 @@ export class AccessControlService {
     // G) paid_single 分岐（PPV）
     if (post.visibility === 'paid_single') {
       const pay = await this.prisma.payment.findFirst({
-        where: { userId: viewerId, postId: post.id, status: 'paid', kind: 'one_time' },
+        where: { userId: viewerId, postId: post.id, paymentStatus: PaymentStatus.paid, kind: PaymentKind.one_time },
         orderBy: { createdAt: 'desc' },
       });
       console.log('[canViewPost:ppv] payment=', !!pay, pay && {

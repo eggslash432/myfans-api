@@ -3,7 +3,7 @@ import {
   IsString, IsEnum, IsOptional, IsArray, IsBoolean, IsInt, Min, ValidateNested, ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { AgeRating, Status, Visibility } from 'src/common/enums/post.enums';
+import { AgeRating, PublishedStatus, Visibility } from '@prisma/client';
 
 class AccessRulesDto {
   @IsArray() @IsOptional()
@@ -34,8 +34,8 @@ export class CreatePostDto {
   priceJpy?: number;
 
   // 受け取ってよい（下書きフラグ）
-  @IsEnum(Status) @IsOptional()
-  status?: Status;
+  @IsEnum(PublishedStatus) @IsOptional()
+  status?: PublishedStatus;
 
   @ValidateNested() @Type(() => AccessRulesDto)
   accessRules!: AccessRulesDto;

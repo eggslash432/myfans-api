@@ -1,73 +1,93 @@
 // scripts/seed-dev.ts
-import { PrismaClient } from '@prisma/client';
+/// <reference types="node" />
+import { PrismaClient, PublishedStatus, Role } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
+
 const prisma = new PrismaClient();
 
-async function main() {
-  // ← 既存テストユーザーのメールに合わせて
-  const email = 'user2@example.com';
-
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) throw new Error(`User not found: ${email}`);
-
-  // 役割がcreatorでない場合は変更（任意）
-  if (user.role !== 'creator') {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { role: 'creator' },
-    });
-  }
-
-  // Creator を作成/更新（公開フラグON）
-  await prisma.creator.upsert({
-    where: { userId: user.id },
-    create: {
-      userId: user.id,
-      publicName: 'テストクリエイター',
-      isListed: true,
-    },
-    update: {
-      publicName: 'テストクリエイター',
-      isListed: true,
-    },
+async function upsertUser(email: string, role: Role, passwordPlain = 'password') {
+  const passwordHash = await bcrypt.hash(passwordPlain, 10);
+  // emailユニーク前提で upsert（idはDB側で採番/uuid）
+  const user = await prisma.user.upsert({
+    where: { email },
+    update: {}, // 既存なら何もしない（必要ならrole/password更新も可）
+    create: { email, role, passwordHash },
+    select: { id: true, email: true, role: true },
   });
-
-  // 購読プラン（1000円/月）を1つ作成（重複しないように名前でゆるく検索）
-  const existing = await prisma.plan.findFirst({
-    where: { creatorId: user.id, name: 'ベーシック' },
-  });
-  if (!existing) {
-    await prisma.plan.create({
-      data: {
-        creatorId: user.id,
-        name: 'ベーシック',
-        priceJpy: 1000,
-        isActive: true,
-        description: '中間検収用のテストプラン',
-      },
-    });
-  }
-
-  // 任意：投稿も1件
-  const hasPost = await prisma.post.findFirst({ where: { creatorId: user.id } });
-  if (!hasPost) {
-    await prisma.post.create({
-      data: {
-        creatorId: user.id,
-        title: 'はじめまして！',
-        bodyMd: 'ようこそMyFans Cloneへ',
-        visibility: 'free',
-        isPublished: true,
-        publishedAt: new Date(),
-      },
-    });
-  }
-
-  console.log('Seed done ✅');
+  return user;
 }
 
-main().catch(e => {
-  console.error(e);
-  process.exit(1);
-}).finally(async () => {
-  await prisma.$disconnect();
-});
+async function upsertCreatorForUser(userId: string, publicName: string) {
+  // userIdがstringの想定（schemaに合わせて）
+  return prisma.creator.upsert({
+    where: { userId },       // @unique
+    update: { publicName, isListed: true },
+    create: { userId, publicName, isListed: true },
+    select: { userId: true, publicName: true },
+  });
+}
+
+async function main() {
+  // 1) ユーザー（ファン/クリエイター）を用意
+  const fan = await upsertUser('user1@example.com', 'fan', 'userpass');            // ログイン用
+  const creatorUser = await upsertUser('user2@example.com', 'creator', 'creatorpass');
+
+  // 2) クリエイター行（1:1）
+  const creator = await upsertCreatorForUser(creatorUser.id, 'demo-creator');
+
+  // 3) プラン（任意：存在チェックして1件用意）
+  const basicPlan = await prisma.plan.upsert({
+    where: { id: 'basic-plan-1' }, // 文字ID運用の例。数値なら別ロジックでOK
+    update: { isActive: true },
+    create: {
+      id: 'basic-plan-1',
+      creatorId: creator.userId,
+      name: 'Basic Plan',
+      priceJpy: 980,
+      isActive: true,
+    },
+    select: { id: true, name: true, priceJpy: true, isActive: true },
+  });
+
+  // 4) 投稿（無料1件 + 公開済み）
+  await prisma.post.create({
+    data: {
+      creatorId: creator.userId,
+      title: 'ようこそ MyFans Clone へ',
+      body: 'これはシードデータの最初の投稿です。',
+      visibility: 'free',                         // schemaがenumなら対応enumに変更
+      priceJpy: null,
+      publishedStatus: PublishedStatus.published, // ← enum を使う
+      publishedAt: new Date(),
+    },
+  });
+
+  // 5) 有料投稿（任意）
+  await prisma.post.create({
+    data: {
+      creatorId: creator.userId,
+      title: '有料投稿（プラン向け）',
+      body: 'プラン加入者のみ閲覧できます。',
+      visibility: 'plan',                         // schemaに合わせて 'plan' / 'paid_single'
+      priceJpy:  null,
+      publishedStatus: PublishedStatus.draft,     // 下書き
+      publishedAt: null,
+    },
+  });
+
+  console.log('✅ Seed completed:', {
+    fan,
+    creatorUser,
+    creator,
+    basicPlan,
+  });
+}
+
+main()
+  .catch((e) => {
+    console.error('❌ Seed failed:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

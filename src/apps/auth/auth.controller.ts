@@ -12,10 +12,16 @@ import { AuthService } from './auth.service';
 import { type Response, type Request } from 'express';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { SignupDto } from './dto/signup.dto';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Post('signup')
+  async signup(@Body() dto: SignupDto) {
+    return this.authService.signup(dto);
+  }  
 
   @Post('login')
   async login(

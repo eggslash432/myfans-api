@@ -70,7 +70,7 @@ export class UsersMeSummaryService {
         id: p.id,
         amount: p.amountJpy,
         kind: p.kind,
-        status: p.status,
+        status: p.paymentStatus,
         title: p.plan?.name ?? p.post?.title ?? '-',
         paidAt: p.paidAt,
         createdAt: p.createdAt,

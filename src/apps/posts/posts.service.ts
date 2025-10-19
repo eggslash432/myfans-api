@@ -52,7 +52,7 @@ export class PostsService {
         where: {
           userId: viewerUserId,
           postId: post.id,
-          status: PaymentStatus.paid,
+          paymentStatus: PaymentStatus.paid,
           kind: PaymentKind.one_time,
         },
         orderBy: { createdAt: 'desc' },

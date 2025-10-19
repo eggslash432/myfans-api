@@ -22,6 +22,12 @@ enum KycStatus {
   rejected
 }
 
+enum PublishedStatus{
+  draft
+  published
+  private
+}
+
 enum SubStatus {
   active
   past_due
@@ -189,25 +195,25 @@ model Subscription {
  * ===== Posts =====
  */
 model Post {
-  id          String     @id @default(uuid())
-  creatorId   String
-  creator     Creator    @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
-  title       String
-  bodyMd      String?
-  visibility  Visibility
-  plan        Plan?      @relation(fields: [planId], references: [id])
-  planId      String?
-  isPublished Boolean    @default(false)
-  publishedAt DateTime?
-  ageRating   AgeRating  @default(all)
-  priceJpy    Int?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id              String     @id @default(uuid())
+  creatorId       String
+  creator         Creator    @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
+  title           String
+  body            String?
+  visibility      Visibility
+  plan            Plan?      @relation(fields: [planId], references: [id])
+  planId          String?
+  publishedStatus PublishedStatus  @default(draft)
+  publishedAt     DateTime?
+  ageRating       AgeRating  @default(all)
+  priceJpy        Int?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   media   PostMedia[]
   Payment Payment[]
 
-  @@index([creatorId, isPublished])
+  @@index([creatorId, publishedStatus])
   @@index([visibility, planId])
   @@index([publishedAt])
 }
@@ -262,11 +268,11 @@ model Payment {
   amountJpy    Int
   kind         PaymentKind
   externalTxId String?       @unique
-  status       PaymentStatus
+  paymentStatus       PaymentStatus
   paidAt       DateTime?
   createdAt    DateTime      @default(now())
 
-  @@index([status, createdAt])
+  @@index([paymentStatus, createdAt])
   @@index([creatorId])
   @@index([planId])
   @@index([postId])
@@ -277,12 +283,12 @@ model Payout {
   creator     Creator      @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
   creatorId   String
   amountJpy   Int
-  status      PayoutStatus
+  payoutStatus      PayoutStatus
   requestedAt DateTime     @default(now())
   paidAt      DateTime?
   note        String?
 
-  @@index([creatorId, status])
+  @@index([creatorId, payoutStatus])
 }
 
 model WebhookEvent {

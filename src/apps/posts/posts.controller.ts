@@ -16,7 +16,7 @@ import { PostsService } from './posts.service';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
-import { PaymentKind, PaymentStatus } from '@prisma/client';
+import { PaymentKind, PaymentStatus, PublishedStatus } from '@prisma/client';
 
 @Controller('posts')
 export class PostsController {
@@ -40,7 +40,7 @@ export class PostsController {
         title: true,
         visibility: true,
         priceJpy: true,
-        isPublished: true,
+        publishedStatus: true,
         publishedAt: true,
         createdAt: true,
       },
@@ -58,8 +58,8 @@ export class PostsController {
     const post = await this.prisma.post.findUnique({
       where: { id },
       select: {
-        id: true, title: true, bodyMd: true, visibility: true,
-        priceJpy: true, isPublished: true, publishedAt: true,
+        id: true, title: true, body: true, visibility: true,
+        priceJpy: true, publishedStatus: true, publishedAt: true,
         creatorId: true, creator: { select: { userId: true } },
       },
     });
@@ -69,7 +69,7 @@ export class PostsController {
     if (viewerId && viewerId === post.creatorId) return post;
 
     // 未公開は作者以外見れない
-    if (!post.isPublished) throw new ForbiddenException('この投稿は未公開です');
+    if (post.publishedStatus !== PublishedStatus.published) throw new ForbiddenException('この投稿は未公開です');
 
     // 無料は誰でも可
     if (post.visibility === 'free') return post;
@@ -96,7 +96,7 @@ export class PostsController {
       where: {
         userId: viewerId,
         postId: post.id,
-        status: PaymentStatus.paid,
+        paymentStatus: PaymentStatus.paid,
         kind: PaymentKind.one_time, // or method: 'ppv'
       },
       select: { id: true },
@@ -112,7 +112,7 @@ export class PostsController {
   @Get('public-feed')
   async publicFeed() {
     return this.prisma.post.findMany({
-      where: { isPublished: true },               // ← 修正
+      where: { publishedStatus: PublishedStatus.published },               // ← 修正
       orderBy: { createdAt: 'desc' },
       take: 20,
       select: {
@@ -147,17 +147,17 @@ export class PostsController {
   @Get(':id/content')
   async content(@Param('id') id: string, @Req() req: any) {
     const post = await this.prisma.post.findUnique({ where: { id } });
-    if (!post || !post.isPublished) throw new NotFoundException();  // ← 修正
+    if (!post || post.publishedStatus !== PublishedStatus.published) throw new NotFoundException();  // ← 修正
 
     // free は誰でもOK
-    if (post.visibility === 'free') return { content: post.bodyMd }; // ← bodyHtml → bodyMd
+    if (post.visibility === 'free') return { content: post.body }; // ← bodyHtml → bodyMd
 
     // paid_single は PostAccess を確認
     if (post.visibility === 'paid_single') {
       const has = await this.prisma.postAccess.findUnique({
         where: { userId_postId: { userId: req.user.id, postId: id } },
       });
-      if (has) return { content: post.bodyMd }; // ← 修正
+      if (has) return { content: post.body }; // ← 修正
       throw new ForbiddenException(); // 未購入
     }
 

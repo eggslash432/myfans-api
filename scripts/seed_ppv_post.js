@@ -25,10 +25,10 @@ const prisma = new PrismaClient();
     const post = await prisma.post.create({
       data: {
         title: 'PPVテスト投稿',
-        bodyMd: '本文だよ（Markdown）',
+        body: '本文だよ（Markdown）',
         visibility: 'paid_single',    // enum Visibility { free, plan, paid_single }
         priceJpy: 300,                // 100以上の整数
-        isPublished: true,
+        publishedStatus: PublishedStatus.draft,
         publishedAt: new Date(),
         creator: { connect: { userId: creator.userId } },
       },

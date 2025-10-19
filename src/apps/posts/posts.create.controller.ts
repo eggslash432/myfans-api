@@ -11,6 +11,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
+import { PublishedStatus } from '@prisma/client';
 
 type UserJwt = {
   sub: string;              // userId
@@ -116,19 +117,36 @@ export class PostsCreateController {
       planId = plan.id;
     }
 
+    const toPublishedStatus = (v: unknown): PublishedStatus => {
+      if (typeof v === 'boolean') return v ? PublishedStatus.published : PublishedStatus.draft;
+      if (typeof v === 'string') {
+        const s = v.toLowerCase();
+        if (s === 'published') return PublishedStatus.published;
+        if (s === 'private')   return PublishedStatus.private;
+        return PublishedStatus.draft;
+      }
+      if (v && (v === PublishedStatus.published || v === PublishedStatus.private || v === PublishedStatus.draft)) {
+        return v as PublishedStatus;
+      }
+      return PublishedStatus.draft;
+    };
+
+    const pub = toPublishedStatus((dto as any).publishedStatus ?? (dto as any).status);
+    const pubAt = pub === PublishedStatus.published ? new Date() : null;    
+
     // ---- Post 作成（creator: connect を使用）----
     const post = await this.prisma.post.create({
       data: {
         creator: { connect: { userId } }, // ★ FK を安全に張る
         title,
-        bodyMd,
+        body: bodyMd,
         visibility: visibility as any, // Prisma の Enum に合わせて as any でキャスト
         ...(visibility === 'plan' && planId
           ? { plan: { connect: { id: planId } } }
           : {}),
         ...(priceJpy != null ? { priceJpy } : {}),
-        isPublished: !isDraft,
-        publishedAt: !isDraft ? now : null,
+        publishedStatus: pub,
+        publishedAt: pubAt,
         ageRating: ageRating as any,
       },
       select: {
@@ -137,7 +155,7 @@ export class PostsCreateController {
         visibility: true,
         planId: true,
         priceJpy: true,
-        isPublished: true,
+        publishedStatus: true,
         publishedAt: true,
         createdAt: true,
       },

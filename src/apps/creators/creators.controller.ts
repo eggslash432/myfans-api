@@ -1,14 +1,13 @@
 import {
   Controller, Get, Post, Body, UseGuards, Request, Param, NotFoundException,
-  ForbiddenException,
-  UnauthorizedException,
-  BadRequestException,
+  ForbiddenException, UnauthorizedException, BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatorsService } from './creators.service';
-import { CreateCreatorDto, Visibility } from './dto/create-creator.dto';
+import { CreateCreatorDto } from './dto/create-creator.dto';
 import { CreatePostDto } from '../posts/dto/create-post.dto';
+import { PublishedStatus } from '@prisma/client';
 
 @Controller('creators')
 export class CreatorsController {
@@ -17,36 +16,32 @@ export class CreatorsController {
     private prisma: PrismaService,
   ) {}
 
-  // 申請（そのままでOK）
+  // 申請
   @UseGuards(JwtAuthGuard)
   @Post()
   async applyAsCreator(@Request() req, @Body() dto: CreateCreatorDto) {
     return this.creatorsService.applyCreator(req.user.sub, dto);
   }
 
-  /**
-   * 一覧: GET /creators
-   * - Creator を起点に取得
-   * - 公開中のみ出すなら isListed: true で絞る
-   */
+  // 一覧: GET /creators
   @Get()
   async list() {
     const rows = await this.prisma.creator.findMany({
       where: {
-        isListed: true, // 必要に応じて外してOK
+        isListed: true,
         user: { isActive: true, role: 'creator' },
       },
       select: {
         userId: true,
         publicName: true,
-        _count: { select: { posts: true } }, // Creator側にpostsがあるのでOK
+        _count: { select: { posts: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 12,
     });
 
     const items = rows.map((c) => ({
-      id: c.userId,                         // ← フロントの :id には userId を使う
+      id: c.userId,
       displayName: c.publicName,
       postsCount: c._count.posts ?? 0,
     }));
@@ -54,16 +49,11 @@ export class CreatorsController {
     return { items };
   }
 
-  /**
-   * 詳細: GET /creators/:id
-   * - :id は User.id（= Creator.userId）
-   * - Plan.priceJpy を UI用の price にマップ
-   * - interval はスキーマに無いので 'month' を暫定固定
-   */
+  // 詳細: GET /creators/:id
   @Get(':id')
   async detail(@Param('id') id: string) {
     const c = await this.prisma.creator.findUnique({
-      where: { userId: id },
+      where: { userId: id }, // userId が string の想定（schema/migrationに合わせる）
       select: {
         userId: true,
         publicName: true,
@@ -72,8 +62,7 @@ export class CreatorsController {
           select: {
             id: true,
             name: true,
-            priceJpy: true, // ★ priceではなくpriceJpy
-            // interval はスキーマに無い
+            priceJpy: true,
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -88,62 +77,88 @@ export class CreatorsController {
       plans: c.plans.map((p) => ({
         id: p.id,
         name: p.name,
-        price: p.priceJpy,   // ← フロントの想定に合わせてプロパティ名を変換
-        interval: 'month',   // ← 暫定で固定（必要ならバックエンドにenum追加）
+        price: p.priceJpy,
+        interval: 'month',
       })),
     };
   }
 
-  /**
-   * （任意）投稿一覧: GET /creators/:id/posts
-   * - Post.creatorId は Creator.userId を参照しているスキーマなので、where は creatorId = :id
-   */
+  // 投稿一覧: GET /creators/:id/posts
   @Get(':id/posts')
   async posts(@Param('id') id: string) {
     const posts = await this.prisma.post.findMany({
-      where: { creatorId: id, isPublished: true },
-      select: { id: true, title: true, visibility: true, priceJpy: true, publishedAt: true },
+      where: {
+        creatorId: id,
+        publishedStatus: PublishedStatus.published, // ← enumで比較
+      },
+      select: {
+        id: true,
+        title: true,
+        visibility: true,    // ← select は boolean 指定
+        priceJpy: true,
+        publishedAt: true,
+      },
       orderBy: { publishedAt: 'desc' },
       take: 20,
     });
 
-    // フロント互換の簡易整形
     const items = posts.map((p) => ({
       id: p.id,
       title: p.title,
-      isFree: p.visibility === 'free',
+      isFree: p.visibility === 'free',   // DB側が 'free' | 'plan' | 'paid_single' 想定
       price: p.priceJpy ?? null,
     }));
     return { items };
   }
 
+  // 自分の投稿作成: POST /creators/me/posts
   @UseGuards(JwtAuthGuard)
   @Post('me/posts')
   async createMyPost(@Request() req, @Body() dto: CreatePostDto) {
     const userId: string | undefined = req.user?.sub;
     const role: string | undefined = req.user?.role;
 
-    if (!userId) throw new UnauthorizedException('JWTが無効です');        // ← 401
-    if (role !== 'creator') throw new ForbiddenException('クリエイターのみ投稿可能です'); // ← 403
+    if (!userId) throw new UnauthorizedException('JWTが無効です');
+    if (role !== 'creator') throw new ForbiddenException('クリエイターのみ投稿可能です');
 
     const creator = await this.prisma.creator.findUnique({ where: { userId } });
-    if (!creator) throw new ForbiddenException('クリエイター登録が必要です');          // ← 403（原因特定しやすく）
+    if (!creator) throw new ForbiddenException('クリエイター登録が必要です');
 
-    if ((dto.visibility === Visibility.plan || dto.visibility === Visibility.paid_single) && !dto.priceJpy) {
-      throw new BadRequestException('有料/PPV は price が必要です');                // ← 400
+    // 有料/PPV のときは price 必須
+    if ((dto.visibility === 'plan' || dto.visibility === 'paid_single') && !dto.priceJpy) {
+      throw new BadRequestException('有料/PPV は price が必要です');
     }
+
+    // DTOの status/publishedStatus を enum に正規化
+    const toPublishedStatus = (v: any): PublishedStatus => {
+      if (!v) return PublishedStatus.draft;
+      const s = String(v).toUpperCase();
+      if (s === 'PUBLISHED') return PublishedStatus.published;
+      if (s === 'PRIVATE')   return PublishedStatus.private;
+      return PublishedStatus.draft;
+    };
+    // dto.publishedStatus（enum or string）/ dto.status（文字列）のどちらでも受ける
+    const normalized = toPublishedStatus((dto as any).publishedStatus ?? (dto as any).status);
+    const pubAt = normalized === PublishedStatus.published ? new Date() : null;
 
     const post = await this.prisma.post.create({
       data: {
         creatorId: userId,
         title: dto.title,
-        bodyMd: dto.body ?? '',
-        visibility: dto.visibility,          // 'free' | 'paid' | 'ppv'
+        body: dto.body ?? '',
+        visibility: dto.visibility,          // 'free' | 'plan' | 'paid_single'
         priceJpy: dto.priceJpy ?? null,
-        isPublished: dto.status === 'published',
-        publishedAt: dto.status === 'published' ? new Date() : null,
+        publishedStatus: normalized,         // ← boolean ではなく enum
+        publishedAt: pubAt,
       },
-      select: { id: true, title: true, visibility: true, priceJpy: true, isPublished: true, publishedAt: true },
+      select: {
+        id: true,
+        title: true,
+        visibility: true,
+        priceJpy: true,
+        publishedStatus: true,               // ← select は true
+        publishedAt: true,
+      },
     });
 
     return {
@@ -151,17 +166,16 @@ export class CreatorsController {
       title: post.title,
       isFree: post.visibility === 'free',
       price: post.priceJpy ?? null,
-      published: post.isPublished,
+      publishedStatus: post.publishedStatus,
       publishedAt: post.publishedAt,
     };
-  }  
+  }
 
   @Post(':creatorId/plans/:planId/checkout')
   async createCheckout(
     @Param('creatorId') creatorId: string,
     @Param('planId') planId: string,
   ) {
-    // plan をDBから取得して priceId を得る（例: plan.stripePriceId）
     const sessionUrl = await this.creatorsService.createSubscriptionCheckout(creatorId, planId);
     return { url: sessionUrl };
   }
