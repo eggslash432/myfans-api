@@ -35,7 +35,7 @@ export class CreatePostDto {
 
   // 受け取ってよい（下書きフラグ）
   @IsEnum(PublishedStatus) @IsOptional()
-  status?: PublishedStatus;
+  publishedStatus?: PublishedStatus;
 
   @ValidateNested() @Type(() => AccessRulesDto)
   accessRules!: AccessRulesDto;

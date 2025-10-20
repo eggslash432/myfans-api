@@ -78,7 +78,7 @@ export class PostsCreateController {
     // - dto.status === 'draft' を下書き扱い
     // - それ以外や未指定は公開（isPublished=true）にする
     const isDraft =
-      (typeof dto.status === 'string' && dto.status.toLowerCase() === 'draft') ||
+      (typeof dto.publishedStatus === 'string' && dto.publishedStatus.toLowerCase() === 'draft') ||
       (dto as any).isPublished === false;
     const now = new Date();
 

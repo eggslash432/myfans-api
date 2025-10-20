@@ -9,6 +9,7 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  Post,
 } from '@nestjs/common';
 import Stripe from 'stripe';
 
@@ -16,7 +17,9 @@ import { PostsService } from './posts.service';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
-import { PaymentKind, PaymentStatus, PublishedStatus } from '@prisma/client';
+import { PaymentKind, PaymentStatus, PublishedStatus, Visibility } from '@prisma/client';
+import { getMyCreatorId } from '../helpers/creator';
+import { CreatePostDto } from './dto/create-post.dto';
 
 @Controller('posts')
 export class PostsController {
@@ -210,4 +213,23 @@ export class PostsController {
 
     return { sessionId: session.id, url: session.url };
   }
+
+  @Post()
+  async create(@Req() req: any, @Body() dto: CreatePostDto) {
+    const creatorId = await getMyCreatorId(this.prisma, req.user.sub);
+
+    return this.prisma.post.create({
+      data: {
+        title: dto.title,
+        body: dto.body,
+        visibility: dto.visibility,            // enum化していればキャスト
+        ageRating: dto.ageRating,
+        publishedStatus: dto.publishedStatus,
+        creatorId,
+        planId: dto.visibility === Visibility.plan ? dto.planId ?? null : null,
+        priceJpy: dto.visibility === Visibility.paid_single ? dto.priceJpy ?? null : null,
+      },
+      select: { id: true },
+    });
+  }  
 }

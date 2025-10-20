@@ -10,7 +10,11 @@ async function upsertUser(email: string, role: Role, passwordPlain = 'password')
   // emailユニーク前提で upsert（idはDB側で採番/uuid）
   const user = await prisma.user.upsert({
     where: { email },
-    update: {}, // 既存なら何もしない（必要ならrole/password更新も可）
+    update: {                     // ← ここを空にしない！
+      role,
+      passwordHash,              // 既存ユーザーでもパスワードを更新
+      isActive: true,
+    },
     create: { email, role, passwordHash },
     select: { id: true, email: true, role: true },
   });
