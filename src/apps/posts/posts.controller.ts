@@ -215,8 +215,24 @@ export class PostsController {
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard) // ← 必須
   async create(@Req() req: any, @Body() dto: CreatePostDto) {
     const creatorId = await getMyCreatorId(this.prisma, req.user.sub);
+
+    // 受け取り値を正規化
+    const toPublishedStatus = (v: unknown): PublishedStatus => {
+      if (typeof v === 'boolean') return v ? PublishedStatus.published : PublishedStatus.draft;
+      if (typeof v === 'string') {
+        const s = v.toLowerCase();
+        if (s === 'published') return PublishedStatus.published;
+        if (s === 'private')   return PublishedStatus.private;
+        return PublishedStatus.draft;
+      }
+      return PublishedStatus.draft;
+    };    
+
+    const pub = toPublishedStatus((dto as any).publishedStatus ?? (dto as any).status);
+    const pubAt = pub === PublishedStatus.published ? new Date() : null;
 
     return this.prisma.post.create({
       data: {
@@ -224,7 +240,8 @@ export class PostsController {
         body: dto.body,
         visibility: dto.visibility,            // enum化していればキャスト
         ageRating: dto.ageRating,
-        publishedStatus: dto.publishedStatus,
+        publishedStatus: pub,
+        publishedAt: pubAt,
         creatorId,
         planId: dto.visibility === Visibility.plan ? dto.planId ?? null : null,
         priceJpy: dto.visibility === Visibility.paid_single ? dto.priceJpy ?? null : null,
