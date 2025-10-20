@@ -10,6 +10,7 @@ import { UsersMeSummaryModule } from '../users/me/summary/users-me-summary.modul
 import { PaymentsModule } from '../payments/payments.module';
 import configuration from '../../config/configuration';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
+import { AdminModule } from '../admin/admin.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     UsersModule,
     AuthModule,
     CreatorsModule,
+    AdminModule,
     PlansModule,
     PostsModule,
     UsersMeSummaryModule,
