@@ -86,6 +86,7 @@ export class CreatorsController {
   // 投稿一覧: GET /creators/:id/posts
   @Get(':id/posts')
   async posts(@Param('id') id: string) {
+    console.log('GET /creators/:id/posts', id);
     const posts = await this.prisma.post.findMany({
       where: {
         creatorId: id,
@@ -101,6 +102,7 @@ export class CreatorsController {
       orderBy: { publishedAt: 'desc' },
       take: 20,
     });
+    console.log('posts found =', posts);
 
     const items = posts.map((p) => ({
       id: p.id,
