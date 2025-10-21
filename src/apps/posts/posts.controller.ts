@@ -107,18 +107,20 @@ export class PostsController {
       select: { id: true },
     });
 
-    // PPV購入チェック（支払いテーブル名/カラム名は合わせて）
-    const ppv = await this.prisma.payment.findFirst({
+    const paidByPayment = await this.prisma.payment.findFirst({
       where: {
         userId: viewerId,
         postId: post.id,
         paymentStatus: PaymentStatus.paid,
-        kind: PaymentKind.one_time, // or method: 'ppv'
+        kind: PaymentKind.one_time,
       },
       select: { id: true },
     });
-
-    if (sub || ppv) {
+    const paidByAccess = await this.prisma.postAccess.findUnique({
+      where: { userId_postId: { userId: viewerId!, postId: post.id } },
+      select: { userId: true },
+    });
+    if (sub || paidByPayment || paidByAccess) {
       return { ...post, canView: true, accessType };
     }
 
@@ -197,6 +199,17 @@ export class PostsController {
       throw new BadRequestException('invalid price');
     }
 
+    // ★ ここでフロントURLを必ず絶対URLに補正
+    const envFront = process.env.FRONT_URL || '';
+    const reqOrigin = req.headers?.origin || '';
+    const base =
+      /^https?:\/\//i.test(envFront) ? envFront :
+      /^https?:\/\//i.test(reqOrigin) ? reqOrigin :
+      'http://localhost:5173'; // 最後の砦（dev）
+
+    const successUrl = `${base.replace(/\/+$/,'')}/mypage?success=1`;
+    const cancelUrl  = `${base.replace(/\/+$/,'')}/posts/${postId}`;    
+
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY! /*, {
       // 型エラーを避けるため、apiVersionは指定しない or プロジェクトの型に一致させる
       // apiVersion: '2025-09-30', // ← stripe の型が期待する最新に合わせるならこちら
@@ -222,9 +235,13 @@ export class PostsController {
           quantity: 1,
         },
       ],
-      success_url: `${process.env.FRONT_URL}/mypage?success=1`,
-      cancel_url: `${process.env.FRONT_URL}/posts/${postId}`,
-      metadata: { userId: req.user.id, postId },
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata: { 
+        userId: req.user.sub, 
+        postId,
+        creatorId: post.creatorId,
+      },
     });
 
     return { sessionId: session.id, url: session.url };

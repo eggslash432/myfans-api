@@ -1,18 +1,115 @@
 // payments.controller.ts
 import {
   Body, Controller, Post, Req,
-  BadRequestException, UseGuards, HttpCode
+  BadRequestException, UseGuards, HttpCode, Headers,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import Stripe from 'stripe';
 import { CreateCheckoutValidatedDto } from './dto/create-checkout.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { PaymentKind, PaymentStatus } from '@prisma/client';
 
 @Controller('payments')
 export class PaymentsController {
   private stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-
   constructor(private readonly prisma: PrismaService) {}
+
+  // ここを追加 ↓↓↓
+  @Post('webhook')
+  @HttpCode(200) // Stripe Webhook は 2xx 応答が必須
+  async webhook(
+    @Req() req: any,
+    @Headers('stripe-signature') signature?: string,
+  ) {
+    const whSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!whSecret) {
+      throw new BadRequestException('STRIPE_WEBHOOK_SECRET is not set');
+    }
+
+    let event: Stripe.Event;
+    try {
+      // main.ts で raw を通しているので req.body は Buffer
+      event = this.stripe.webhooks.constructEvent(req.body, signature!, whSecret);
+    } catch (e: any) {
+      throw new BadRequestException(`Webhook signature verification failed: ${e.message}`);
+    }
+
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const cs = event.data.object as Stripe.Checkout.Session;
+
+        // mode: 'payment' | 'subscription'
+        const mode = cs.mode;
+        const metadata = (cs.metadata || {}) as Record<string, string | undefined>;
+        const userId = metadata.userId;
+        const postId = metadata.postId; // PPV のとき posts.controller で埋めている
+        const planId = metadata.planId; // もしサブスク導線で埋めるなら
+        const creatorId = metadata.creatorId; 
+
+        // Stripe ID（ユニーク）
+        const externalTxId =
+          typeof cs.payment_intent === 'string'
+            ? cs.payment_intent
+            : (cs.payment_intent as Stripe.PaymentIntent | null)?.id ?? cs.id;
+
+        // 金額（JPYは最小単位＝円）
+        const amountJpy = cs.amount_total ?? 0; // Int 必須      
+        
+        // デバッグ
+        console.log('[webhook] session.id=', cs.id);
+        console.log('[webhook] amountJpy=', amountJpy, ' userId=', userId, ' postId=', postId);
+        console.log('[webhook] externalTxId=', externalTxId);        
+
+        await this.prisma.payment.upsert({
+          where: { externalTxId },
+          update: {
+            paymentStatus: PaymentStatus.paid,
+            amountJpy: amountJpy,
+            paidAt: new Date(),
+          },
+          create: {
+            externalTxId,
+            userId: userId ?? null,
+            creatorId: creatorId ?? null,
+            planId: planId ?? null,
+            postId: postId ?? null,
+            amountJpy: amountJpy,           // ★ required Int
+            kind: mode === 'subscription'
+              ? PaymentKind.subscription
+              : PaymentKind.one_time,
+            paymentStatus: PaymentStatus.paid,
+            paidAt: new Date(),
+          },
+        });
+
+        // ★ ここがあなたの既存ロジックと接続する場所
+        if (mode === 'payment' && postId && userId) {
+          // PPV購入 → PostAccess 付与
+          await this.prisma.postAccess.upsert({
+            where: { userId_postId: { userId, postId } },
+            update: {},
+            create: { userId, postId },
+          });
+        }
+
+        // サブスク（必要なら）
+        // if (mode === 'subscription' && planId && userId) {
+        //   await this.prisma.subscription.upsert({ ... });
+        // }
+
+        break;
+      }
+
+      // 必要なら他イベントも拾う
+      case 'payment_intent.succeeded':
+      case 'charge.succeeded':
+      default:
+        // ログだけ取ってNo-Op
+        break;
+    }
+
+    return { received: true };
+  }  
 
   @Post('checkout/session')
   @UseGuards(JwtAuthGuard)
