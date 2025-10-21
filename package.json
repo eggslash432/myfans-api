@@ -20,7 +20,9 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "export-enums": "tsx scripts/export-enums.ts"
+    "export-enums": "tsx scripts/export-enums.ts",
+    "studio:local":  "dotenv -e .env.local  -- npx prisma studio --port 5555",
+    "studio:render": "dotenv -e .env.render -- npx prisma studio --port 5556"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",
@@ -56,6 +58,7 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^24.8.1",
     "@types/supertest": "^6.0.3",
+    "dotenv-cli": "^10.0.0",
     "eslint": "^9.37.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",

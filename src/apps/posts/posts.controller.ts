@@ -20,6 +20,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PaymentKind, PaymentStatus, PublishedStatus, Visibility } from '@prisma/client';
 import { getMyCreatorId } from '../helpers/creator';
 import { CreatePostDto } from './dto/create-post.dto';
+import { access } from 'fs';
 
 @Controller('posts')
 export class PostsController {
@@ -68,17 +69,29 @@ export class PostsController {
     });
     if (!post) throw new NotFoundException('post not found');
 
+    // accessType を visibility から決め打ち
+    const accessType =
+      post.visibility === Visibility.paid_single ? 'ppv' :
+      post.visibility === Visibility.plan        ? 'plan' : 'free';    
+
     // 作者本人は常に可
-    if (viewerId && viewerId === post.creatorId) return post;
+    if (viewerId && viewerId === post.creatorId) {
+      return { ...post, canView: true, accessType: accessType}
+    };
 
     // 未公開は作者以外見れない
     if (post.publishedStatus !== PublishedStatus.published) throw new ForbiddenException('この投稿は未公開です');
 
-    // 無料は誰でも可
-    if (post.visibility === 'free') return post;
+    // 無料投稿は誰でもOK
+    if (post.visibility === Visibility.free) {
+      return { ...post, canView: true, accessType: 'free' };  // ← ★追加
+    }
 
-    // ここから有料
-    if (!viewerId) throw new ForbiddenException('購読/購入が必要です');
+    // ここから有料（plan / ppv）
+    // 未ログインでも 200 で返したい場合は canView:false で返す
+    if (!viewerId) {
+      return { ...post, canView: false, accessType };
+    }
 
     // 購読者チェック（テーブル名/フィールドはプロジェクトに合わせて調整）
     const sub = await this.prisma.subscription.findFirst({
@@ -105,9 +118,12 @@ export class PostsController {
       select: { id: true },
     });
 
-    if (sub || ppv) return post;
+    if (sub || ppv) {
+      return { ...post, canView: true, accessType };
+    }
 
-    throw new ForbiddenException('この投稿を閲覧する権限がありません');
+    // ← ここがあなたの入れたい行（Forbiddenの代わりに 200 を返す）
+    return { ...post, canView: false, accessType };
   }
 
   // 公開フィード（新着投稿）
@@ -153,10 +169,10 @@ export class PostsController {
     if (!post || post.publishedStatus !== PublishedStatus.published) throw new NotFoundException();  // ← 修正
 
     // free は誰でもOK
-    if (post.visibility === 'free') return { content: post.body }; // ← bodyHtml → bodyMd
+    if (post.visibility === Visibility.free) return { content: post.body }; // ← bodyHtml → bodyMd
 
     // paid_single は PostAccess を確認
-    if (post.visibility === 'paid_single') {
+    if (post.visibility === Visibility.paid_single) {
       const has = await this.prisma.postAccess.findUnique({
         where: { userId_postId: { userId: req.user.id, postId: id } },
       });
@@ -174,7 +190,7 @@ export class PostsController {
   async checkoutPost(@Body() body: { postId: string }, @Req() req: any) {
     const { postId } = body;
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
-    if (!post || post.visibility !== 'paid_single') {
+    if (!post || post.visibility !== Visibility.paid_single) {
       throw new BadRequestException('purchase not allowed');
     }
     if (post.priceJpy == null || post.priceJpy <= 0) {
