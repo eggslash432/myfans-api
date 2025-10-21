@@ -53,80 +53,107 @@ export class PostsController {
     return { items: posts };
   }
 
-  @UseGuards(OptionalJwtAuthGuard) // 未ログインでもOKにする
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
   async findOne(@Param('id') id: string, @Req() req: any) {
-    const viewerId: string | undefined = req.user?.sub ?? req.user?.id; // どちらでも取れるように
+    const viewerId: string | undefined = req.user?.sub ?? req.user?.id; // 念のため互換
     const now = new Date();
 
+    // まず本文なしで基本情報だけ
     const post = await this.prisma.post.findUnique({
       where: { id },
       select: {
-        id: true, title: true, body: true, visibility: true,
-        priceJpy: true, publishedStatus: true, publishedAt: true,
-        creatorId: true, creator: { select: { userId: true } },
+        id: true,
+        title: true,
+        visibility: true,
+        priceJpy: true,
+        publishedStatus: true,
+        publishedAt: true,
+        creatorId: true,
+        creator: { select: { userId: true } },
       },
     });
     if (!post) throw new NotFoundException('post not found');
 
-    // accessType を visibility から決め打ち
-    const accessType =
-      post.visibility === Visibility.paid_single ? 'ppv' :
-      post.visibility === Visibility.plan        ? 'plan' : 'free';    
-
     // 作者本人は常に可
     if (viewerId && viewerId === post.creatorId) {
-      return { ...post, canView: true, accessType: accessType}
-    };
+      const full = await this.prisma.post.findUnique({
+        where: { id },
+        select: { id: true, title: true, body: true, visibility: true, priceJpy: true, publishedStatus: true, publishedAt: true, creatorId: true },
+      });
+      return { ...full!, canView: true, accessType: post.visibility === Visibility.paid_single ? 'ppv' : post.visibility === Visibility.plan ? 'plan' : 'free' };
+    }
 
     // 未公開は作者以外見れない
-    if (post.publishedStatus !== PublishedStatus.published) throw new ForbiddenException('この投稿は未公開です');
+    if (post.publishedStatus !== PublishedStatus.published) {
+      throw new ForbiddenException('この投稿は未公開です');
+    }
 
-    // 無料投稿は誰でもOK
+    // accessType 決定
+    const accessType =
+      post.visibility === Visibility.paid_single ? 'ppv' :
+      post.visibility === Visibility.plan        ? 'plan' : 'free';
+
+    // 無料は誰でもOK → 本文付きで返す
     if (post.visibility === Visibility.free) {
-      return { ...post, canView: true, accessType: 'free' };  // ← ★追加
+      const full = await this.prisma.post.findUnique({
+        where: { id },
+        select: { id: true, title: true, body: true, visibility: true, priceJpy: true, publishedStatus: true, publishedAt: true, creatorId: true },
+      });
+      return { ...full!, canView: true, accessType: 'free' };
     }
 
     // ここから有料（plan / ppv）
-    // 未ログインでも 200 で返したい場合は canView:false で返す
     if (!viewerId) {
+      // 未ログインは本文なしで canView:false
       return { ...post, canView: false, accessType };
     }
 
-    // 購読者チェック（テーブル名/フィールドはプロジェクトに合わせて調整）
-    const sub = await this.prisma.subscription.findFirst({
-      where: {
-        userId: viewerId,
-        status: 'active',
-        plan :{
-          creatorId: post.creatorId,
+    // PLAN購読チェック
+    let canView = false;
+    if (post.visibility === Visibility.plan) {
+      const hasSub = await this.prisma.subscription.findFirst({
+        where: {
+          userId: viewerId,
+          status: { in: ['active', 'trialing'] },
+          currentPeriodEnd: { gt: now },
+          plan: { creatorId: post.creatorId },
         },
-        currentPeriodStart: { lte: now },
-        currentPeriodEnd:   { gte: now },
-      },
-      select: { id: true },
-    });
-
-    const paidByPayment = await this.prisma.payment.findFirst({
-      where: {
-        userId: viewerId,
-        postId: post.id,
-        paymentStatus: PaymentStatus.paid,
-        kind: PaymentKind.one_time,
-      },
-      select: { id: true },
-    });
-    const paidByAccess = await this.prisma.postAccess.findUnique({
-      where: { userId_postId: { userId: viewerId!, postId: post.id } },
-      select: { userId: true },
-    });
-    if (sub || paidByPayment || paidByAccess) {
-      return { ...post, canView: true, accessType };
+        select: { id: true },
+      });
+      canView = !!hasSub;
     }
 
-    // ← ここがあなたの入れたい行（Forbiddenの代わりに 200 を返す）
+    // PPVチェック
+    if (!canView && post.visibility === Visibility.paid_single) {
+      const paidByPayment = await this.prisma.payment.findFirst({
+        where: {
+          userId: viewerId,
+          postId: post.id,
+          paymentStatus: PaymentStatus.paid,
+          kind: PaymentKind.one_time,
+        },
+        select: { id: true },
+      });
+      const paidByAccess = await this.prisma.postAccess.findUnique({
+        where: { userId_postId: { userId: viewerId, postId: post.id } },
+        select: { userId: true },
+      });
+      canView = !!(paidByPayment || paidByAccess);
+    }
+
+    if (canView) {
+      const full = await this.prisma.post.findUnique({
+        where: { id },
+        select: { id: true, title: true, body: true, visibility: true, priceJpy: true, publishedStatus: true, publishedAt: true, creatorId: true },
+      });
+      return { ...full!, canView: true, accessType };
+    }
+
+    // 本文なしで返す
     return { ...post, canView: false, accessType };
   }
+
 
   // 公開フィード（新着投稿）
   @UseGuards(OptionalJwtAuthGuard)

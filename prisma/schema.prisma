@@ -72,6 +72,11 @@ enum PayoutStatus {
   rejected
 }
 
+enum BillingInterval {
+  month
+  year
+}
+
 /**
  * ===== Core Users =====
  */
@@ -154,6 +159,7 @@ model Plan {
   priceJpy        Int
   description     String?
   isActive        Boolean  @default(true)
+  billingInterval BillingInterval @default(month)
   externalPriceId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
