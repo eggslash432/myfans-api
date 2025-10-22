@@ -39,8 +39,9 @@ export class PaymentsService {
         const s = evt.data.object as any;
 
         const userId = String(s.metadata?.userId ?? '');
+        const creatorId = String(s.metadata?.creatorId ?? '');
         const planId = String(s.metadata?.planId ?? '');
-        const externalSubId = s.subscription ? String(s.subscription) : null;
+        const stripeSubscriptionId = String(s.subscription);
 
         if (!userId || !planId) {
           this.logger.warn(`checkout.session.completed: missing metadata userId/planId. metadata=${JSON.stringify(s.metadata)}`);
@@ -51,15 +52,15 @@ export class PaymentsService {
         let periodStart = new Date();
         let periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // +30日
 
-        if (externalSubId) {
+        if (stripeSubscriptionId) {
           try {
-            const subRes = await this.stripe.subscriptions.retrieve(externalSubId);
+            const subRes = await this.stripe.subscriptions.retrieve(stripeSubscriptionId);
             const cps: number | undefined = (subRes as any)?.current_period_start;
             const cpe: number | undefined = (subRes as any)?.current_period_end;
             if (typeof cps === 'number') periodStart = new Date(cps * 1000);
             if (typeof cpe === 'number') periodEnd = new Date(cpe * 1000);
           } catch (e) {
-            this.logger.warn(`Failed to retrieve subscription(${externalSubId}): ${String((e as Error).message)}`);
+            this.logger.warn(`Failed to retrieve subscription(${stripeSubscriptionId}): ${String((e as Error).message)}`);
           }
         }
 
@@ -73,7 +74,7 @@ export class PaymentsService {
             where: { id: existing.id },
             data: {
               status: 'active',
-              externalSubId,
+              stripeSubscriptionId :stripeSubscriptionId,
               currentPeriodStart: periodStart,
               currentPeriodEnd: periodEnd,
               // cancelAtPeriodEnd: false,
@@ -82,10 +83,11 @@ export class PaymentsService {
         } else {
           await tx.subscription.create({
             data: {
-              userId,
-              planId,
+              userId: userId,
+              creatorId: creatorId,
+              planId: planId,
               status: 'active',
-              externalSubId,
+              stripeSubscriptionId: stripeSubscriptionId,
               currentPeriodStart: periodStart,
               currentPeriodEnd: periodEnd,
             },

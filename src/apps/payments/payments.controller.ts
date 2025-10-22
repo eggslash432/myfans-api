@@ -2,12 +2,13 @@
 import {
   Body, Controller, Post, Req,
   BadRequestException, UseGuards, HttpCode, Headers,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import Stripe from 'stripe';
 import { CreateCheckoutValidatedDto } from './dto/create-checkout.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { PaymentKind, PaymentStatus } from '@prisma/client';
+import { CheckoutMode, PaymentKind, PaymentStatus } from '@prisma/client';
 
 
 // 🧩 この関数を追加
@@ -53,49 +54,57 @@ export class PaymentsController {
         // mode: 'payment' | 'subscription'
         const mode = cs.mode;
         const metadata = (cs.metadata || {}) as Record<string, string | undefined>;
+
         const userId = metadata.userId;
         const postId = metadata.postId; // PPV のとき posts.controller で埋めている
         const planId = metadata.planId; // もしサブスク導線で埋めるなら
         const creatorId = metadata.creatorId; 
-
         // Stripe ID（ユニーク）
-        const externalTxId =
-          typeof cs.payment_intent === 'string'
-            ? cs.payment_intent
-            : (cs.payment_intent as Stripe.PaymentIntent | null)?.id ?? cs.id;
-
+        const stripeSubscriptionId = cs.subscription as string | null;
         // 金額（JPYは最小単位＝円）
-        const amountJpy = cs.amount_total ?? 0; // Int 必須      
-        
-        // デバッグ
-        console.log('[webhook] session.id=', cs.id);
-        console.log('[webhook] amountJpy=', amountJpy, ' userId=', userId, ' postId=', postId);
-        console.log('[webhook] externalTxId=', externalTxId);        
+        const amountJpy = cs.amount_total ?? 0; // Int 必須 
 
-        await this.prisma.payment.upsert({
-          where: { externalTxId },
-          update: {
-            paymentStatus: PaymentStatus.paid,
-            amountJpy: amountJpy,
-            paidAt: new Date(),
-          },
-          create: {
-            externalTxId,
-            userId: userId ?? null,
-            creatorId: creatorId ?? null,
-            planId: planId ?? null,
-            postId: postId ?? null,
-            amountJpy: amountJpy,           // ★ required Int
-            kind: mode === 'subscription'
-              ? PaymentKind.subscription
-              : PaymentKind.one_time,
-            paymentStatus: PaymentStatus.paid,
-            paidAt: new Date(),
-          },
-        });
+        if (mode === 'subscription' && userId && planId && creatorId && stripeSubscriptionId) {
+          // 期間境界は Stripe から取得（失敗時フォールバック +30日）
+          let periodStart = new Date();
+          let periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+          try {
+            const sub = await this.stripe.subscriptions.retrieve(stripeSubscriptionId);
+            const cps = (sub as any)?.current_period_start;
+            const cpe = (sub as any)?.current_period_end;
+            if (typeof cps === 'number') periodStart = new Date(cps * 1000);
+            if (typeof cpe === 'number') periodEnd = new Date(cpe * 1000);
+          } catch (e) {
+            // ログだけ出してフォールバック
+            console.warn(`[webhook] retrieve subscription failed: ${String((e as Error).message)}`);
+          }
 
+          // userId + creatorId + planId の複合ユニークで upsert
+          await this.prisma.subscription.upsert({
+            where: { userId_creatorId_planId: { userId, creatorId, planId } },
+            create: {
+              userId,
+              creatorId,
+              planId,
+              status: 'active',
+              stripeSubscriptionId: stripeSubscriptionId,
+              currentPeriodStart: periodStart,
+              currentPeriodEnd: periodEnd,
+              cancelAtPeriodEnd: false,
+            },
+            update: {
+              status: 'active',
+              stripeSubscriptionId: stripeSubscriptionId, // 保険で最新値に
+              currentPeriodStart: periodStart,
+              currentPeriodEnd: periodEnd,
+              cancelAtPeriodEnd: false,
+            },
+          });
+        }
+
+        // 既存の payment upsert / PPV 付与ロジックはそのままでOK
         // ★ ここがあなたの既存ロジックと接続する場所
-        if (mode === 'payment' && postId && userId) {
+        if (mode === CheckoutMode.payment && postId && userId) {
           // PPV購入 → PostAccess 付与
           await this.prisma.postAccess.upsert({
             where: { userId_postId: { userId, postId } },
@@ -104,20 +113,41 @@ export class PaymentsController {
           });
         }
 
-        // サブスク（必要なら）
-        // if (mode === 'subscription' && planId && userId) {
-        //   await this.prisma.subscription.upsert({ ... });
-        // }
-
         break;
       }
 
-      // 必要なら他イベントも拾う
-      case 'payment_intent.succeeded':
-      case 'charge.succeeded':
-      default:
-        // ログだけ取ってNo-Op
-        break;
+    case 'customer.subscription.created':
+    case 'customer.subscription.updated':
+    case 'invoice.paid': {
+      // 正確な期間・状態で上書き
+      const sub = event.data.object as Stripe.Subscription;
+      const start = new Date((sub as any).current_period_start * 1000);
+      const end   = new Date((sub as any).current_period_end * 1000);
+
+      await this.prisma.subscription.updateMany({
+        where: { stripeSubscriptionId: sub.id },
+        data: {
+          status: mapStripeStatus(sub.status),
+          currentPeriodStart: start,
+          currentPeriodEnd: end,
+          cancelAtPeriodEnd: !!(sub as any).cancel_at_period_end,
+        },
+      });
+      break;
+    }
+
+    case 'customer.subscription.deleted': {
+      const sub = event.data.object as Stripe.Subscription;
+      await this.prisma.subscription.updateMany({
+        where: { stripeSubscriptionId: sub.id },
+        data: { status: 'canceled' },
+      });
+      break;
+    }
+
+    default:
+      // 必要に応じてログ
+      break;
     }
 
     return { received: true };
@@ -184,75 +214,137 @@ export class PaymentsController {
     return { id: session.id, url: session.url };
   }
 
-  @Post('webhook')
-  rawBody(@Req() req, @Headers('stripe-signature') sig: string) {
-    let event: Stripe.Event;
-    try {
-      event = this.stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
-    } catch (err) { 
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new BadRequestException(`Webhook Error: ${msg}`); 
-    }
+  // サブスク(プラン)のCheckoutセッション作成
+  @UseGuards(JwtAuthGuard)
+  @Post('checkout/plan')
+  async checkoutPlan(@Body() body: { planId: string }, @Req() req: any) {
+    const userId = req.user?.sub;
+    const planId = body?.planId;
+    if (!userId || !planId) throw new BadRequestException('invalid request');
 
-    if (event.type === 'checkout.session.completed') {
-      const s = event.data.object as Stripe.Checkout.Session;
-      if (s.mode === 'subscription' && s.metadata?.kind === 'plan') {
+    const plan = await this.prisma.plan.findUnique({
+      where: { id: planId },
+      select: { id: true, name: true, priceJpy: true, isActive: true, creatorId: true },
+    });
+    if (!plan || !plan.isActive) throw new NotFoundException('plan not found');
 
-        const userId = s.metadata.userId!;
-        const planId = s.metadata.planId!;
-        const externalSubId = s.subscription as string;
+    // 返りURL（.env の FRONT_URL を優先）
+    const envFront = process.env.FRONT_URL || '';
+    const reqOrigin = req.headers?.origin || '';
+    const base =
+      /^https?:\/\//i.test(envFront) ? envFront :
+      /^https?:\/\//i.test(reqOrigin) ? reqOrigin :
+      'http://localhost:5173';
 
-        // とりあえず“今日開始・+30日”で作成（後で正確値に更新）
-        const now = new Date();
-        const approxEnd = new Date(now.getTime() + 30 * 24 * 3600 * 1000);        
+    const successUrl = `${base.replace(/\/+$/,'')}/mypage?subscribed=1`;
+    const cancelUrl  = `${base.replace(/\/+$/,'')}/creators/${plan.creatorId}`;
 
-        this.prisma.subscription.upsert({
-          where: {
-            userId_planId: { userId: userId, planId: planId },
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+
+    // （簡易）毎回カスタマー作成。既存を再利用する設計ならここで検索/保存する
+    const customer = await stripe.customers.create({
+      email: req.user.email,
+      metadata: { userId },
+    });
+
+    // JPYはゼロ小数。unit_amount はそのまま円で指定
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer: customer.id,
+      line_items: [
+        {
+          price_data: {
+            currency: 'jpy',
+            recurring: { interval: 'month' },
+            unit_amount: plan.priceJpy,
+            product_data: { name: `Plan: ${plan.name}` },
           },
-          create: {
-            userId: userId,
-            planId: planId,
-            status: 'active',
-            externalSubId,
-            currentPeriodStart: now,
-            currentPeriodEnd: approxEnd,
-          },
-          update: {
-            status: 'active',
-            externalSubId,
-          },
-        }).catch(console.error);
-      }
-    }
-
-    if (event.type === 'invoice.paid' || event.type === 'customer.subscription.updated') {
-      const sub = event.data.object as Stripe.Subscription;
-      const start = new Date((sub as any).current_period_start * 1000);
-      const end   = new Date((sub as any).current_period_end   * 1000);  
-
-      this.prisma.subscription.updateMany({
-        where: { externalSubId: sub.id },
-        data: {
-          status: mapStripeStatus(sub.status),
-          currentPeriodStart: start,
-          currentPeriodEnd: end,
-          cancelAtPeriodEnd: !!(sub as any).cancel_at_period_end,
+          quantity: 1,
         },
-      }).catch(console.error);
-    }
+      ],
+      allow_promotion_codes: true,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata: {
+        kind: 'plan',
+        userId,
+        planId: plan.id,
+        creatorId: plan.creatorId,
+      },
+    });
 
-    // 3) キャンセル/失効にも対応しておくと安心
-    if (event.type === 'customer.subscription.deleted') {
-      const sub = event.data.object as Stripe.Subscription;
-      this.prisma.subscription.updateMany({
-        where: { externalSubId: sub.id },
-        data: { status: 'canceled' },
-      }).catch(console.error);
-    }
-
-    return { received: true };    
+    return { sessionId: session.id, url: session.url };
   }  
+
+  // @Post('webhook')
+  // rawBody(@Req() req, @Headers('stripe-signature') sig: string) {
+  //   let event: Stripe.Event;
+  //   try {
+  //     event = this.stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
+  //   } catch (err) { 
+  //     const msg = err instanceof Error ? err.message : String(err);
+  //     throw new BadRequestException(`Webhook Error: ${msg}`); 
+  //   }
+
+  //   if (event.type === 'checkout.session.completed') {
+  //     const s = event.data.object as Stripe.Checkout.Session;
+  //     if (s.mode === 'subscription' && s.metadata?.kind === 'plan') {
+
+  //       const userId = s.metadata.userId!;
+  //       const planId = s.metadata.planId!;
+  //       const externalSubId = s.subscription as string;
+
+  //       // とりあえず“今日開始・+30日”で作成（後で正確値に更新）
+  //       const now = new Date();
+  //       const approxEnd = new Date(now.getTime() + 30 * 24 * 3600 * 1000);        
+
+  //       this.prisma.subscription.upsert({
+  //         where: {
+  //           userId_planId: { userId: userId, planId: planId },
+  //         },
+  //         create: {
+  //           userId: userId,
+  //           planId: planId,
+  //           status: 'active',
+  //           externalSubId,
+  //           currentPeriodStart: now,
+  //           currentPeriodEnd: approxEnd,
+  //         },
+  //         update: {
+  //           status: 'active',
+  //           externalSubId,
+  //         },
+  //       }).catch(console.error);
+  //     }
+  //   }
+
+  //   if (event.type === 'invoice.paid' || event.type === 'customer.subscription.updated') {
+  //     const sub = event.data.object as Stripe.Subscription;
+  //     const start = new Date((sub as any).current_period_start * 1000);
+  //     const end   = new Date((sub as any).current_period_end   * 1000);  
+
+  //     this.prisma.subscription.updateMany({
+  //       where: { externalSubId: sub.id },
+  //       data: {
+  //         status: mapStripeStatus(sub.status),
+  //         currentPeriodStart: start,
+  //         currentPeriodEnd: end,
+  //         cancelAtPeriodEnd: !!(sub as any).cancel_at_period_end,
+  //       },
+  //     }).catch(console.error);
+  //   }
+
+  //   // 3) キャンセル/失効にも対応しておくと安心
+  //   if (event.type === 'customer.subscription.deleted') {
+  //     const sub = event.data.object as Stripe.Subscription;
+  //     this.prisma.subscription.updateMany({
+  //       where: { externalSubId: sub.id },
+  //       data: { status: 'canceled' },
+  //     }).catch(console.error);
+  //   }
+
+  //   return { received: true };    
+  // }  
 
   // ====== ② Stripe Webhook受信（これを追加） ======
   @Post('webhooks/stripe')

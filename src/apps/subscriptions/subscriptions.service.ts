@@ -14,8 +14,8 @@ export class SubscriptionsService {
     if (sub.userId !== userId) throw new ForbiddenException();
 
     // Stripe側に外部サブスクIDを持っていれば即キャンセル
-    if (sub.externalSubId) {
-      await this.stripe.subscriptions.cancel(sub.externalSubId, {
+    if (sub.stripeSubscriptionId) {
+      await this.stripe.subscriptions.cancel(sub.stripeSubscriptionId, {
         invoice_now: false,
         prorate: false,
       });
