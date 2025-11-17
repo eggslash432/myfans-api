@@ -1,3 +1,5 @@
+// src/apps/auth/dto/signup.dto.ts
+
 import { IsEmail, IsIn, IsString, MinLength } from 'class-validator';
 
 export class SignupDto {

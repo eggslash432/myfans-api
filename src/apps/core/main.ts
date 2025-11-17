@@ -1,3 +1,5 @@
+// myfans-api/src/apps/core/main.ts
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
@@ -34,11 +36,6 @@ async function bootstrap() {
   // その他は通常の JSON ボディ
   app.use(bodyParser.json());
   app.use(cookieParser());
-
-  // ヘルスチェック（listen前に定義）
-  app.getHttpAdapter().get('/health', (_req, res) =>
-    res.send({ status: 'ok', time: new Date().toISOString() }),
-  );
 
   // Swagger（docs）
   const config = new DocumentBuilder()

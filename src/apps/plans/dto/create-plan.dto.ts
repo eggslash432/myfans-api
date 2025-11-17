@@ -1,6 +1,7 @@
 import { BillingInterval } from '@prisma/client';
 import { IsNotEmpty, IsString, IsInt, Min, IsOptional, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
+import { BillingIntervalEnum } from 'src/shared/enums';
 
 export class CreatePlanDto {
   @IsString()
@@ -13,8 +14,8 @@ export class CreatePlanDto {
   priceJpy: number;
 
   @IsOptional()
-  @IsEnum(BillingInterval)
-  billingInterval?: BillingInterval;
+  @IsEnum(BillingIntervalEnum)
+  billingInterval?: BillingIntervalEnum;
 
   @IsOptional()
   @IsString()

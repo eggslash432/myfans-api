@@ -9,4 +9,10 @@ export class AppController {
   getHello(): string {
     return this.appService.getHello();
   }
+
+  // 追加：ヘルスチェック用 GET /api/health
+  @Get('health')
+  health() {
+    return { status: 'ok' };
+  }  
 }
