@@ -23,6 +23,8 @@ async function bootstrap() {
     origin: [
       'http://localhost:5173',
       'https://myfans-frontend.onrender.com',
+      'd2d1zk1rp5q7z8.cloudfront.net',
+      'https://d2d1zk1rp5q7z8.cloudfront.net',
     ], // 'https://myfans-frontend-stg.vercel.app' なども追加可
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
