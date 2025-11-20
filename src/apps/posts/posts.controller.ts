@@ -1,3 +1,5 @@
+//src/apps/posts/posts.controller.ts
+
 import {
   Controller,
   Get,
@@ -71,6 +73,15 @@ export class PostsController {
         publishedAt: true,
         creatorId: true,
         creator: { select: { userId: true } },
+        media: {
+          orderBy: { sortOrder: 'asc' },
+          select: {
+            id: true,
+            mediaType: true,
+            url: true,
+            sortOrder: true,
+          },
+        },
       },
     });
     if (!post) throw new NotFoundException('post not found');
@@ -79,7 +90,25 @@ export class PostsController {
     if (viewerId && viewerId === post.creatorId) {
       const full = await this.prisma.post.findUnique({
         where: { id },
-        select: { id: true, title: true, body: true, visibility: true, priceJpy: true, publishedStatus: true, publishedAt: true, creatorId: true },
+        select: { 
+          id: true, 
+          title: true, 
+          body: true, 
+          visibility: true, 
+          priceJpy: true, 
+          publishedStatus: true, 
+          publishedAt: true, 
+          creatorId: true,
+          media: {
+            orderBy: { sortOrder: 'asc' },
+            select: {
+              id: true,
+              mediaType: true,
+              url: true,
+              sortOrder: true,
+            },
+          },          
+        },
       });
       return { ...full!, canView: true, accessType: post.visibility === Visibility.paid_single ? 'ppv' : post.visibility === Visibility.plan ? 'plan' : 'free' };
     }
@@ -98,7 +127,25 @@ export class PostsController {
     if (post.visibility === Visibility.free) {
       const full = await this.prisma.post.findUnique({
         where: { id },
-        select: { id: true, title: true, body: true, visibility: true, priceJpy: true, publishedStatus: true, publishedAt: true, creatorId: true },
+        select: { 
+          id: true, 
+          title: true, 
+          body: true, 
+          visibility: true, 
+          priceJpy: true, 
+          publishedStatus: true, 
+          publishedAt: true, 
+          creatorId: true,
+          media: {
+            orderBy: { sortOrder: 'asc' },
+            select: {
+              id: true,
+              mediaType: true,
+              url: true,
+              sortOrder: true,
+            },
+          },          
+        },
       });
       return { ...full!, canView: true, accessType: 'free' };
     }
@@ -145,7 +192,25 @@ export class PostsController {
     if (canView) {
       const full = await this.prisma.post.findUnique({
         where: { id },
-        select: { id: true, title: true, body: true, visibility: true, priceJpy: true, publishedStatus: true, publishedAt: true, creatorId: true },
+        select: { 
+          id: true, 
+          title: true, 
+          body: true, 
+          visibility: true, 
+          priceJpy: true, 
+          publishedStatus: true, 
+          publishedAt: true, 
+          creatorId: true,
+          media: {
+            orderBy: { sortOrder: 'asc' },
+            select: {
+              id: true,
+              mediaType: true,
+              url: true,
+              sortOrder: true,
+            },
+          },
+        },
       });
       return { ...full!, canView: true, accessType };
     }

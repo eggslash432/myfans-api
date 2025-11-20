@@ -13,6 +13,8 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { AdminModule } from '../admin/admin.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { S3Service } from '../s3/s3.service';
+import { MediaController } from '../media/media.controller';
 
 @Module({
   imports: [
@@ -31,11 +33,13 @@ import { AppService } from './app.service';
     PaymentsModule,
     SubscriptionsModule,
   ],
-  controllers:[
-    AppController,
-  ],
   providers: [
     AppService,
+    S3Service,
+  ],
+  controllers:[
+    AppController,
+    MediaController,
   ],
 })
 export class AppModule {}

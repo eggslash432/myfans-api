@@ -3,8 +3,8 @@ import {
   IsString, IsEnum, IsOptional, IsArray, IsBoolean, IsInt, Min, ValidateNested, ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { AgeRating, PublishedStatus, Visibility } from '@prisma/client';
-import { AgeRatingEnum, PublishedStatusEnum, VisibilityEnum } from 'src/shared/enums';
+import { AgeRating, PublishedStatus, Visibility, MediaType} from '@prisma/client';
+import { AgeRatingEnum, PublishedStatusEnum, VisibilityEnum, MediaTypeEnum } from 'src/shared/enums';
 
 class AccessRulesDto {
   @IsArray() @IsOptional()
@@ -15,6 +15,17 @@ class AccessRulesDto {
 
   @IsInt() @Min(100) @IsOptional()
   ppvPriceJpy?: number; // allowByPpv=true のときに使用
+}
+
+export class CreatePostMediaDto {
+  @IsEnum(MediaTypeEnum) mediaType!: MediaTypeEnum;
+
+  @IsString()
+  url: string;
+
+  @IsInt()
+  @IsOptional()
+  sortOrder?: number;
 }
 
 export class CreatePostDto {
@@ -28,6 +39,12 @@ export class CreatePostDto {
   @ValidateIf(o => o.visibility === VisibilityEnum.plan)
   @IsString()
   planId?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePostMediaDto)
+  @IsOptional()
+  media?: CreatePostMediaDto[];
 
   // visibility=paid_single のときのみ検証
   @ValidateIf(o => o.visibility === VisibilityEnum.paid_single)

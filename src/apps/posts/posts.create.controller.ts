@@ -134,6 +134,25 @@ export class PostsCreateController {
     const pub = toPublishedStatus((dto as any).publishedStatus ?? (dto as any).status);
     const pubAt = pub === PublishedStatus.published ? new Date() : null;    
 
+    // ---- メディア配列の整形 ----
+    const rawMedia = (dto as any).media as
+      | { mediaType: string; url: string; sortOrder?: number }[]
+      | undefined;
+
+    const mediaData =
+      Array.isArray(rawMedia)
+        ? rawMedia
+            .filter((m) => !!m && typeof m.url === 'string' && m.url.trim() !== '')
+            .map((m, idx) => ({
+              mediaType: m.mediaType as any,
+              url: m.url.trim(),
+              sortOrder:
+                typeof m.sortOrder === 'number' && m.sortOrder >= 0
+                  ? m.sortOrder
+                  : idx,
+            }))
+        : [];    
+
     // ---- Post 作成（creator: connect を使用）----
     const post = await this.prisma.post.create({
       data: {
@@ -148,10 +167,21 @@ export class PostsCreateController {
         publishedStatus: pub,
         publishedAt: pubAt,
         ageRating: ageRating as any,
+        // ★ メディアがあればネスト作成
+        ...(mediaData.length
+          ? {
+              media: {
+                createMany: {
+                  data: mediaData,
+                },
+              },
+            }
+          : {}),
       },
       select: {
         id: true,
         title: true,
+        media: true,
         visibility: true,
         planId: true,
         priceJpy: true,
