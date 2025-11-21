@@ -130,6 +130,11 @@ model Creator {
   bankAccount Json?
   stripeAccountId String?
   stripeKycStatus String?
+  stripeChargesEnabled   Boolean  @default(false)
+  stripePayoutsEnabled   Boolean  @default(false)
+  stripeKycDisabledReason String?
+  stripeKycErrors         String?
+  stripeKycFieldsDue      String?  
   isListed    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -175,6 +180,9 @@ model Plan {
   externalPriceId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  creatorSharePercent  Int @default(80) 
+  platformSharePercent Int @default(20) 
 
   subscriptions Subscription[]
   posts         Post[]
@@ -292,6 +300,9 @@ model Payment {
   paymentStatus       PaymentStatus
   paidAt       DateTime?
   createdAt    DateTime      @default(now())
+
+  creatorAmountJpy   Int?    
+  platformAmountJpy  Int?   
 
   @@index([paymentStatus, createdAt])
   @@index([creatorId])

@@ -10,22 +10,42 @@ export class StripeWebhookService {
   constructor(private readonly prisma: PrismaService) {}
 
   async handleAccountUpdated(account: Stripe.Account) {
-    const kyc = account.requirements;
+    const req = account.requirements;
+    const disabled = req?.disabled_reason;
+    const errors = req?.errors ?? [];
+    const currentlyDue = req?.currently_due ?? [];
+    const pendingVerification = req?.pending_verification ?? [];
 
-    // Stripe側のKYCざっくり判定
-    const status =
-      kyc?.disabled_reason === null && (kyc?.currently_due?.length ?? 0) === 0
-        ? 'verified'   // 本人確認OK
-        : 'pending';   // それ以外（書類不足・審査中など）
+    // ①ステータス判定ロジック
+    let status: 'verified' | 'pending' | 'reviewing' | 'rejected' | 'disabled';
 
-    // このアカウントIDに紐づくCreatorを更新
+    if (disabled) {
+      status = 'disabled';
+    } else if (errors.length > 0) {
+      status = 'rejected';
+    } else if (currentlyDue.length > 0) {
+      status = 'pending'; // 書類不足
+    } else if (pendingVerification.length > 0) {
+      status = 'reviewing'; // Stripe 審査中
+    } else {
+      status = 'verified'; // 完全承認
+    }
+
+    // ② DB 更新（必要項目すべて）
     await this.prisma.creator.updateMany({
       where: { stripeAccountId: account.id },
-      data: { stripeKycStatus: status },   // ★ 追加したフィールドを更新
+      data: {
+        stripeKycStatus: status,
+        stripeChargesEnabled: account.charges_enabled,
+        stripePayoutsEnabled: account.payouts_enabled,
+        stripeKycDisabledReason: disabled,
+        stripeKycErrors: JSON.stringify(errors),
+        stripeKycFieldsDue: JSON.stringify(currentlyDue),
+      },
     });
 
     this.logger.log(
-      `Stripe account ${account.id} KYC updated -> ${status}`,
+      `Stripe KYC updated for ${account.id} -> ${status}`,
     );
   }
 }
