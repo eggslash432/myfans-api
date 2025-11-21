@@ -374,4 +374,12 @@ export class PostsController {
       select: { id: true },
     });
   }  
+
+  // ログインしていなくても叩けるが、ログイン中なら viewerId を渡す
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get(':id')
+  async getPost(@Param('id') id: string, @Req() req: any) {
+    const viewerId: string | undefined = req.user?.sub ?? undefined;
+    return this.posts.findOneWithCanView(id, viewerId);
+  }  
 }

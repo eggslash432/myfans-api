@@ -70,4 +70,30 @@ export class PostsService {
     // ここに来ない想定
     throw new ForbiddenException('アクセスできません');
   }
+
+  /**
+   * 投稿詳細 + canView フラグを返す
+   */
+  async findOneWithCanView(id: string, viewerUserId?: string) {
+    const post = await this.prisma.post.findUnique({
+      where: { id },
+      include: {
+        media: true,
+        creator: {
+          select: {
+            userId: true,
+            publicName: true,
+          },
+        },
+        plan: true,
+      },
+    });
+
+    if (!post) {
+      throw new NotFoundException('投稿が見つかりません');
+    }
+
+    const canView = await this.ac.canViewPost(id, viewerUserId);
+    return { ...post, canView };
+  }  
 }

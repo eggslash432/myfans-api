@@ -9,6 +9,7 @@ import Stripe from 'stripe';
 import { CreateCheckoutValidatedDto } from './dto/create-checkout.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CheckoutMode, PaymentKind, PaymentStatus } from '@prisma/client';
+import { StripeWebhookService } from './stripe-webhook.service';
 
 
 // 🧩 この関数を追加
@@ -25,9 +26,11 @@ function mapStripeStatus(
 @Controller('payments')
 export class PaymentsController {
   private stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly webhookService: StripeWebhookService, // ← 追加
+  ) {}
 
-  // ここを追加 ↓↓↓
   @Post('webhook')
   @HttpCode(200) // Stripe Webhook は 2xx 応答が必須
   async webhook(
@@ -144,6 +147,12 @@ export class PaymentsController {
       });
       break;
     }
+
+    case 'account.updated': {
+      const account = event.data.object as Stripe.Account;
+      await this.webhookService.handleAccountUpdated(account);
+      break;
+    }    
 
     default:
       // 必要に応じてログ

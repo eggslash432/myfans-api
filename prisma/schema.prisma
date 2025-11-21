@@ -1,3 +1,7 @@
+/*
+prisma/schema.prisma
+ */
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -124,6 +128,8 @@ model Creator {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   publicName  String
   bankAccount Json?
+  stripeAccountId String?
+  stripeKycStatus String?
   isListed    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

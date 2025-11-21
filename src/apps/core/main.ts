@@ -11,7 +11,7 @@ import * as express from 'express';
 import { join } from 'path';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.setGlobalPrefix('api');
 
@@ -39,8 +39,14 @@ async function bootstrap() {
   app.use('/api/payments/webhook', bodyParser.raw({ type: 'application/json' }));
   // ← ここを追加
   app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
-  // その他は通常の JSON ボディ
-  app.use(bodyParser.json());
+  // かつ bodyParser.json の verify で req.rawBody をセット
+  app.use(
+    bodyParser.json({
+      verify: (req: any, res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
   app.use(cookieParser());
 
   // Swagger（docs）

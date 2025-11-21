@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Body, UseGuards, Request, Param, NotFoundException,
-  ForbiddenException, UnauthorizedException, BadRequestException,
+  ForbiddenException, UnauthorizedException, BadRequestException, Req,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -181,4 +181,27 @@ export class CreatorsController {
     const sessionUrl = await this.creatorsService.createSubscriptionCheckout(creatorId, planId);
     return { url: sessionUrl };
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('apply')
+  async apply(@Req() req: any, @Body() body: any) {
+    const userId = req.user.sub as string;
+    return this.creatorsService.applyCreator(userId, body);
+  }  
+
+  // クリエイター本人用の情報取得
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async getMe(@Req() req: any) {
+    const userId = req.user.sub as string;
+    return this.creatorsService.getMe(userId);
+  }
+
+  // 本人確認を開始（StripeのKYC画面URLを返す）
+  @UseGuards(JwtAuthGuard)
+  @Post('me/kyc/start')
+  async startKyc(@Req() req: any) {
+    const userId = req.user.sub as string;
+    return this.creatorsService.startKyc(userId);
+  }  
 }

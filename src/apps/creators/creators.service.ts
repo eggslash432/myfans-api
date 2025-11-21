@@ -1,3 +1,5 @@
+// myfans-api/src/apps/creators/creators.service.ts
+
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCreatorDto } from './dto/create-creator.dto';
@@ -27,59 +29,39 @@ export class CreatorsService {
       throw new BadRequestException('invalid user id: ' + userIdRaw);
     }
 
-    // 既に Creator なら弾く
-    const existing = await this.prisma.creator.findUnique({ where: { userId } });
-    if (existing) {
-      throw new BadRequestException('すでにクリエイター登録済みです');
+    // ユーザーが実在するか一応チェック
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('user not found: ' + userId);
     }
 
-    // publicName は Creator.publicName へ
-    const publicName = dto.publicName ?? dto.displayName;
+    // publicName を決定
+    const publicName = dto.publicName ?? dto.displayName ?? user.email?.split('@')[0];
     if (!publicName) {
       throw new BadRequestException('publicName または displayName を指定してください');
     }
 
-    // Creator レコード作成
-    const creator = await this.prisma.creator.create({
-      data: {
+    // ★ここを upsert にする：あれば更新、なければ作成
+    const creator = await this.prisma.creator.upsert({
+      where: { userId },              // PK = userId
+      update: {
+        publicName,
+        bankAccount: dto.bankAccount ?? undefined,
+      },
+      create: {
         userId,
         publicName,
         bankAccount: dto.bankAccount ?? undefined,
       },
     });
 
-    // Profile（任意）更新
-    if (dto.displayName || dto.bio) {
-      await this.prisma.profile.upsert({
-        where: { userId },
-        update: {
-          displayName: dto.displayName ?? undefined,
-          bio: dto.bio ?? undefined,
-        },
-        create: {
-          userId,
-          displayName: dto.displayName ?? dto.publicName ?? '',
-          bio: dto.bio ?? null,
-        },
+    // ユーザーの role を creator に
+    if (user.role !== Role.creator) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { role: Role.creator },
       });
     }
-
-    // KYC 申請（任意）
-    if (dto.kycDocuments) {
-      await this.prisma.kycSubmission.create({
-        data: {
-          userId,
-          status: KycStatus.pending,
-          documents: dto.kycDocuments,
-        },
-      });
-    }
-
-    // ユーザーの role を creator に昇格
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { role: Role.creator },
-    });
 
     return creator;
   }
@@ -103,4 +85,64 @@ export class CreatorsService {
 
     return session.url!; // これをフロントへ返す
   }
+
+  async createStripeAccountForCreator(userId: string) {
+    const account = await this.stripe.accounts.create({
+      type: 'express',
+      country: 'JP',
+      business_type: 'individual',
+      capabilities: {
+        card_payments: { requested: true },
+        transfers: { requested: true },
+      },
+    });
+
+    await this.prisma.creator.update({
+      where: { userId },
+      data: { stripeAccountId: account.id },
+    });
+
+    return account.id;
+  }  
+
+  async createKycLink(stripeAccountId: string) {
+    const link = await this.stripe.accountLinks.create({
+      account: stripeAccountId,
+      refresh_url: process.env.FRONTEND_URL + "/kyc/refresh",
+      return_url: process.env.FRONTEND_URL + "/kyc/complete",
+      type: "account_onboarding",
+    });
+    return link.url;
+  }  
+
+  // クリエイター情報 + KYCステータス取得
+  async getMe(userId: string) {
+    const creator = await this.prisma.creator.findUnique({
+      where: { userId },
+    });
+    if (!creator) {
+      // ★ 未登録なら 404 を返す
+      throw new NotFoundException('creator not found');
+    }
+    return creator;
+  }
+
+  // KYC開始用（アカウントを作ってリンク返す）
+  async startKyc(userId: string) {
+    // 1. Creator を取得
+    const creator = await this.prisma.creator.findUnique({ where: { userId } });
+    if (!creator) {
+      throw new BadRequestException('クリエイター登録が必要です');
+    }
+
+    // 2. Stripeアカウントが無ければ作成
+    const accountId =
+      creator.stripeAccountId ??
+      (await this.createStripeAccountForCreator(userId));
+
+    // 3. KYCリンクを作成
+    const url = await this.createKycLink(accountId);
+
+    return { url, stripeKycStatus: creator.stripeKycStatus ?? 'pending' };
+  }  
 }

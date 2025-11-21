@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PaymentKind, PaymentStatus } from '@prisma/client';
+import { PaymentKind, PaymentStatus, Visibility, SubStatus } from '@prisma/client';
 import { PrismaService } from 'src/apps/prisma/prisma.service';
 
 @Injectable()
@@ -12,7 +12,13 @@ export class AccessControlService {
 
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      select: { id: true, visibility: true, creatorId: true, planId: true, priceJpy: true },
+      select: { 
+        id: true, 
+        visibility: true, 
+        creatorId: true, 
+        planId: true, 
+        priceJpy: true 
+      },
     });
 
     // B) 投稿取得結果
@@ -38,34 +44,57 @@ export class AccessControlService {
     }
 
     // F) plan 分岐
-    if (post.visibility === 'plan') {
+    if (post.visibility === Visibility.plan) {
       if (!post.planId) {
         console.log('[canViewPost:plan] deny (no planId)');
         return false;
       }
+
+      const now = new Date();
       const sub = await this.prisma.subscription.findFirst({
-        where: { userId: viewerId, planId: post.planId, status: { in: ['active','trialing'] } },
+        where: {
+          userId: viewerId,
+          planId: post.planId,
+          status: { in: [SubStatus.active, SubStatus.trialing] },
+          currentPeriodEnd: { gt: now },
+        },
       });
-      console.log('[canViewPost:plan] sub=', !!sub);
+      console.log('[canViewPost:plan] sub=', !!sub, sub && {
+        id: sub.id,
+        status: sub.status,
+        currentPeriodEnd: sub.currentPeriodEnd,
+      });
       return !!sub;
     }
 
-    // G) paid_single 分岐（PPV）
-    if (post.visibility === 'paid_single') {
-      const pay = await this.prisma.payment.findFirst({
-        where: { userId: viewerId, postId: post.id, paymentStatus: PaymentStatus.paid, kind: PaymentKind.one_time },
-        orderBy: { createdAt: 'desc' },
+    // 4) 単品課金 (PPV)
+    if (post.visibility === Visibility.paid_single) {
+      const access = await this.prisma.postAccess.findUnique({
+        where: {
+          userId_postId: {
+            userId: viewerId,
+            postId: post.id,
+          },
+        },
       });
-      console.log('[canViewPost:ppv] payment=', !!pay, pay && {
-        id: pay.id, amountJpy: pay.amountJpy, paidAt: pay.paidAt,
+
+      console.log('[canViewPost:ppv] access=', !!access, access && {
+        id: access.id,
+        expiresAt: access.expiresAt,
       });
-      // 金額チェックを入れるならここで enough 判定もログ
-      // const enough = !post.priceJpy || (pay?.amountJpy ?? 0) >= post.priceJpy;
-      // console.log('[canViewPost:ppv] enough=', enough, 'req=', post.priceJpy);
-      return !!pay /* && enough */;
+
+      if (!access) return false;
+
+      // 有効期限付きにする場合はこちらで判定
+      if (access.expiresAt && access.expiresAt <= new Date()) {
+        console.log('[canViewPost:ppv] expired');
+        return false;
+      }
+
+      return true;
     }
 
-    console.log('[canViewPost:unknown] deny');
+    console.log('[canViewPost:unknownVisibility] deny', post.visibility);
     return false;
   }
 
