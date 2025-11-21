@@ -1,3 +1,5 @@
+// myfans-api/src/apps/payments/payments.service.ts
+
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/apps/prisma/prisma.service';
@@ -12,111 +14,15 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {
-    const secret = process.env.STRIPE_SECRET_KEY || this.config.get<string>('stripeSecretKey');
+    const secret =
+      process.env.STRIPE_SECRET_KEY ||
+      this.config.get<string>('stripeSecretKey');
+
     if (!secret) {
       throw new Error('STRIPE_SECRET_KEY is not set');
     }
-    this.stripe = new Stripe(secret);
-  }
 
-  /**
-   * Stripe Webhook 受信処理
-   * - idempotency: webhookLog で重複登録を防止
-   * - checkout.session.completed: 購読の active 化＋期間境界の反映
-   */
-  async handleWebhook(body: any, signature?: string) {
-    // ここでは署名検証は呼び出し元で実施済み or 省略前提
-    const evt = typeof body === 'string' ? JSON.parse(body) : body;
-
-    // 既に処理済みならスキップ
-    const exists = await this.prisma.webhookLog.findUnique({ where: { id: evt.id } });
-    if (exists) return { ok: true, duplicated: true };
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.webhookLog.create({ data: { id: evt.id, type: evt.type } });
-
-      if (evt.type === 'checkout.session.completed') {
-        const s = evt.data.object as any;
-
-        const userId = String(s.metadata?.userId ?? '');
-        const creatorId = String(s.metadata?.creatorId ?? '');
-        const planId = String(s.metadata?.planId ?? '');
-        const stripeSubscriptionId = String(s.subscription);
-
-        if (!userId || !planId) {
-          this.logger.warn(`checkout.session.completed: missing metadata userId/planId. metadata=${JSON.stringify(s.metadata)}`);
-          return;
-        }
-
-        // --- 課金期間（current_period_start/end）を Stripe から取得（失敗時はフォールバック +30日） ---
-        let periodStart = new Date();
-        let periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // +30日
-
-        if (stripeSubscriptionId) {
-          try {
-            const subRes = await this.stripe.subscriptions.retrieve(stripeSubscriptionId);
-            const cps: number | undefined = (subRes as any)?.current_period_start;
-            const cpe: number | undefined = (subRes as any)?.current_period_end;
-            if (typeof cps === 'number') periodStart = new Date(cps * 1000);
-            if (typeof cpe === 'number') periodEnd = new Date(cpe * 1000);
-          } catch (e) {
-            this.logger.warn(`Failed to retrieve subscription(${stripeSubscriptionId}): ${String((e as Error).message)}`);
-          }
-        }
-
-        // --- 既存購読の有無で upsert 的に処理 ---
-        const existing = await tx.subscription.findFirst({
-          where: { userId, planId },
-        });
-
-        if (existing) {
-          await tx.subscription.update({
-            where: { id: existing.id },
-            data: {
-              status: 'active',
-              stripeSubscriptionId :stripeSubscriptionId,
-              currentPeriodStart: periodStart,
-              currentPeriodEnd: periodEnd,
-              // cancelAtPeriodEnd: false,
-            },
-          });
-        } else {
-          await tx.subscription.create({
-            data: {
-              userId: userId,
-              creatorId: creatorId,
-              planId: planId,
-              status: 'active',
-              stripeSubscriptionId: stripeSubscriptionId,
-              currentPeriodStart: periodStart,
-              currentPeriodEnd: periodEnd,
-            },
-          });
-        }
-
-        // 決済レコード（任意：重複防止簡易版）
-        try {
-          const amountTotal: number | undefined = (s as any)?.amount_total;
-          const currency: string | undefined = (s as any)?.currency ?? 'jpy';
-          const paymentIntentId: string | undefined = (s as any)?.payment_intent;
-          await tx.payment.create({
-            data: {
-              id: paymentIntentId ?? undefined, // 既に採番されるなら省略
-              userId,
-              amountJpy: typeof amountTotal === 'number' ? Math.floor(amountTotal) : undefined,
-              currency,
-              status: 'succeeded',
-              kind: 'subscription',
-              paidAt: new Date(),
-            } as any,
-          });
-        } catch {
-          // 決済レコード作成は任意のため失敗は握りつぶす
-        }
-      }
-    });
-
-    return { ok: true };
+    this.stripe = new Stripe(secret, {});
   }
 
   /**
@@ -124,8 +30,13 @@ export class PaymentsService {
    * - success/cancel URL は ENV or ConfigService から取得
    * - customer は ensureStripeCustomer で作成/再利用
    * - line_items.price はプランに紐づいた Stripe Price ID を使用
+   * - metadata に userId / planId / creatorId を載せて Webhook 側で利用
    */
-  async createCheckoutForPlan(userId: string, creatorId: string, planId: string) {
+  async createCheckoutForPlan(
+    userId: string,
+    creatorId: string,
+    planId: string,
+  ) {
     const appOrigin =
       this.config.get<string>('appOrigin') ??
       process.env.APP_ORIGIN ??
@@ -147,8 +58,12 @@ export class PaymentsService {
     // プランに対応する Stripe Price ID を取得
     const priceId = await this.getStripePriceId(planId);
 
-    // 任意: メタデータで userId / planId を保持（webhook用）
-    const metadata = { userId, planId, creatorId };
+    // Webhook 側で使う metadata
+    const metadata = {
+      userId,
+      planId,
+      creatorId,
+    };
 
     const session = await this.stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -167,18 +82,90 @@ export class PaymentsService {
       },
     });
 
-    this.logger.log(`[CheckoutSession] Created: ${session.url}`);
+    this.logger.log(`[CheckoutSession] Created: ${session.id}`);
+
+    return { url: session.url };
+  }
+
+  /**
+   * （オプション）PPV / 単品購入用 Checkout Session 作成
+   * - Post の priceJpy を使って支払い
+   * - metadata に userId / postId / creatorId を載せて Webhook 側で PostAccess 付与
+   */
+  async createCheckoutForPost(userId: string, postId: string) {
+    const appOrigin =
+      this.config.get<string>('appOrigin') ??
+      process.env.APP_ORIGIN ??
+      'http://localhost:5173';
+
+    const successPath =
+      this.config.get<string>('stripePpvSuccessPath') ??
+      process.env.STRIPE_PPV_SUCCESS_PATH ??
+      '/mypage?ppv=success';
+
+    const cancelPath =
+      this.config.get<string>('stripePpvCancelPath') ??
+      process.env.STRIPE_PPV_CANCEL_PATH ??
+      '/mypage?ppv=cancel';
+
+    const successUrl = `${appOrigin}${successPath}`;
+    const cancelUrl = `${appOrigin}${cancelPath}`;
+
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: {
+        id: true,
+        title: true,
+        priceJpy: true,
+        creatorId: true,
+      },
+    });
+
+    if (!post || post.priceJpy == null) {
+      throw new Error('この投稿は PPV 価格が設定されていません');
+    }
+
+    const metadata = {
+      userId,
+      postId: post.id,
+      creatorId: post.creatorId,
+    };
+
+    const session = await this.stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items: [
+        {
+          price_data: {
+            currency: 'jpy',
+            unit_amount: post.priceJpy, // JPY は1円=1unit
+            product_data: {
+              name: post.title,
+            },
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      customer: await this.ensureStripeCustomer(userId),
+      metadata,
+    });
+
+    this.logger.log(`[PPV CheckoutSession] Created: ${session.id}`);
+
     return { url: session.url };
   }
 
   /**
    * プランID→Stripe Price ID を取得
-   * - Prisma スキーマのカラム名差異に耐えるフォールバック実装
+   * - 現行スキーマの externalPriceId を優先
+   * - 開発中の互換性のために複数カラム名に対応（as any で型をごまかす）
    */
   private async getStripePriceId(planId: string): Promise<string> {
     const plan: any = await this.prisma.plan.findUnique({
       where: { id: planId },
       select: {
+        externalPriceId: true as any,
         stripePriceId: true as any,
         stripe_price_id: true as any,
         priceId: true as any,
@@ -187,6 +174,7 @@ export class PaymentsService {
     });
 
     const priceId =
+      plan?.externalPriceId ??
       plan?.stripePriceId ??
       plan?.stripe_price_id ??
       plan?.priceId ??
@@ -196,6 +184,7 @@ export class PaymentsService {
       this.logger.error(`Stripe Price ID not found for planId=${planId}`);
       throw new Error('Stripe Price ID is not set for this plan.');
     }
+
     return String(priceId);
   }
 
@@ -204,7 +193,9 @@ export class PaymentsService {
    * - user.stripeCustomerId / stripe_customer_id どちらにも対応
    * - カラムが存在しなければ undefined を返し、Checkout 側でメール収集
    */
-  private async ensureStripeCustomer(userId: string): Promise<string | undefined> {
+  private async ensureStripeCustomer(
+    userId: string,
+  ): Promise<string | undefined> {
     const user: any = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -214,8 +205,11 @@ export class PaymentsService {
         stripe_customer_id: true as any,
       } as any,
     });
+
     if (!user) {
-      this.logger.warn(`ensureStripeCustomer: user not found (id=${userId})`);
+      this.logger.warn(
+        `ensureStripeCustomer: user not found (id=${userId})`,
+      );
       return undefined;
     }
 
@@ -240,6 +234,7 @@ export class PaymentsService {
         data: { stripe_customer_id: customer.id } as any,
       });
     }
+
     return customer.id;
   }
 }

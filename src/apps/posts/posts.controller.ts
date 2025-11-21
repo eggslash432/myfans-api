@@ -20,15 +20,16 @@ import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentKind, PaymentStatus, PublishedStatus, Visibility } from '@prisma/client';
-import { getMyCreatorId } from '../helpers/creator';
 import { CreatePostDto } from './dto/create-post.dto';
 import { access } from 'fs';
+import { CreatorHelper } from '../helpers/creator.helper';
 
 @Controller('posts')
 export class PostsController {
   constructor(
     private readonly posts: PostsService,
     private readonly prisma: PrismaService,
+    private readonly creatorHelper: CreatorHelper,
   ) {}
 
   // 新規: 自分の投稿一覧
@@ -342,7 +343,7 @@ export class PostsController {
   @Post()
   @UseGuards(JwtAuthGuard) // ← 必須
   async create(@Req() req: any, @Body() dto: CreatePostDto) {
-    const creatorId = await getMyCreatorId(this.prisma, req.user.sub);
+    const creatorId = await this.creatorHelper.getMyCreatorId(req.user.sub);
 
     // 受け取り値を正規化
     const toPublishedStatus = (v: unknown): PublishedStatus => {

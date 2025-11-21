@@ -3,15 +3,16 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PlansService } from './plans.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { PrismaService } from '../prisma/prisma.service';
-import { getMyCreatorId } from '../helpers/creator';
 import { BillingInterval } from '@prisma/client';
 import { CreatorOnlyGuard } from '../access-control/creator-only.guard';
+import { CreatorHelper } from '../helpers/creator.helper';
 
 @Controller('plans')
 export class PlansController {
   constructor(
     private readonly plans: PlansService,
     private readonly prisma: PrismaService,
+    private readonly creatorHelper: CreatorHelper,
   ) {}
 
   @Post()
@@ -21,7 +22,7 @@ export class PlansController {
     const userId = req.user?.sub;
     if (!userId) throw new BadRequestException('未ログインです');
 
-    const creatorId = await getMyCreatorId(this.prisma, userId).catch(() => null);
+    const creatorId = await this.creatorHelper.getMyCreatorId(userId).catch(() => null);
     if (!creatorId) throw new ForbiddenException('クリエイター登録がありません');  
 
     try{
@@ -80,7 +81,7 @@ export class PlansController {
 
   @Get()
   async myPlans(@Req() req: any) {
-    const creatorId = await getMyCreatorId(this.prisma, req.user.sub);
+    const creatorId = await this.creatorHelper.getMyCreatorId(req.user.sub);
     return this.prisma.plan.findMany({
       where: { creatorId },
       orderBy: { createdAt: 'desc' },
