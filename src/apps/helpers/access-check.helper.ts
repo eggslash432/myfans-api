@@ -1,6 +1,10 @@
 // src/apps/helpers/access-check.helper.ts
 
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   PublishedStatus,
@@ -15,64 +19,78 @@ export class AccessCheckHelper {
   /**
    * 投稿閲覧権限チェック
    *
-   * @returns { post, canView }
+   * - free          : 誰でも閲覧可
+   * - plan          : 対象プランにアクティブ購読があるユーザーのみ閲覧可
+   * - paid_single   : PPV購入(PostAccessあり)ユーザーのみ閲覧可
+   *
+   * - 投稿者本人は下書き/非公開含めて常に閲覧可
+   * - 上記を満たさない場合は ForbiddenException を投げる
    */
-  async assertCanViewPost(userId: string | null, postId: string) {
+  async assertCanViewPost(
+    userId: string | null,
+    postId: string,
+  ): Promise<{ post: any; canView: boolean }> {
+    const now = new Date();
+
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
       include: {
-        plan: true,
         creator: true,
+        plan: true,
+        media: true,
       },
     });
 
     if (!post) {
-      throw new ForbiddenException('投稿が存在しません');
+      throw new NotFoundException('投稿が見つかりません');
     }
 
-    // ✦ 非公開・下書きはクリエイター本人のみ
-    if (post.publishedStatus !== PublishedStatus.published) {
-      if (!userId || post.creatorId !== userId) {
-        throw new ForbiddenException('この投稿は公開されていません');
-      }
+    // 投稿者本人はステータス/公開範囲に関係なく閲覧可
+    if (userId && post.creatorId === userId) {
       return { post, canView: true };
     }
 
-    // ✦ 無料投稿
+    // 公開状態チェック（公開されていない投稿は本人以外見せない）
+    if (post.publishedStatus !== PublishedStatus.published) {
+      throw new ForbiddenException('この投稿は公開されていません');
+    }
+
+    // 無料投稿は誰でも閲覧可
     if (post.visibility === Visibility.free) {
       return { post, canView: true };
     }
 
-    // ✦ ここより下はログイン必須
+    // ここから先はログイン必須
     if (!userId) {
-      throw new ForbiddenException('ログインが必要です');
+      throw new ForbiddenException('この投稿を閲覧する権限がありません');
     }
 
-    // ✦ プラン限定の投稿
+    // ------ プラン購読者向け投稿 (plan) ------
     if (post.visibility === Visibility.plan) {
       if (!post.planId) {
-        throw new ForbiddenException('この投稿にはプラン設定がありません');
+        // 設計上ありえないが保険
+        throw new ForbiddenException('この投稿を閲覧する権限がありません');
       }
 
       const sub = await this.prisma.subscription.findFirst({
         where: {
           userId,
+          creatorId: post.creatorId,
           planId: post.planId,
-          status: {
-            in: [SubStatus.active, SubStatus.trialing],
-          },
-          currentPeriodEnd: { gt: new Date() },
+          status: SubStatus.active,
+          currentPeriodStart: { lte: now },
+          currentPeriodEnd: { gte: now },
         },
       });
 
       if (!sub) {
-        throw new ForbiddenException('この投稿はプラン加入者限定です');
+        throw new ForbiddenException('この投稿を閲覧する権限がありません');
       }
 
       return { post, canView: true };
     }
 
-    // ✦ PPV（単品課金）
+    // ------ PPV (単品販売) 投稿 (paid_single) ------
     if (post.visibility === Visibility.paid_single) {
       const access = await this.prisma.postAccess.findUnique({
         where: {
@@ -83,13 +101,14 @@ export class AccessCheckHelper {
         },
       });
 
-      if (!access || (access.expiresAt && access.expiresAt <= new Date())) {
+      if (!access || (access.expiresAt && access.expiresAt <= now)) {
         throw new ForbiddenException('この投稿を閲覧する権限がありません');
       }
 
       return { post, canView: true };
     }
 
-    throw new ForbiddenException('この投稿は閲覧できません');
+    // ここまででマッチしなければ閲覧不可
+    throw new ForbiddenException('この投稿を閲覧する権限がありません');
   }
 }

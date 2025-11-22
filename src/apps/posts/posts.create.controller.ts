@@ -5,186 +5,91 @@ import {
   Body,
   UseGuards,
   Req,
-  BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
-import { PublishedStatus } from '@prisma/client';
+import { PublishedStatus, Visibility } from '@prisma/client';
 import { UserJwt } from 'src/shared/types';
+import { CreatorHelper } from '../helpers/creator.helper';
 
 @Controller()
 export class PostsCreateController {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly creatorHelper: CreatorHelper,
+  ) {}
 
-  // エイリアス: /posts と /creators/me/posts の両方を受ける
+  /**
+   * エイリアス①: POST /posts
+   *  - createPostSmart() の候補パスその1
+   */
   @UseGuards(JwtAuthGuard)
   @Post('posts')
   async createAtPosts(@Body() dto: CreatePostDto, @Req() req: any) {
-    const user = req.user as UserJwt | undefined;
-    return this.createImpl(dto, user?.sub, user?.role);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('creators/me/posts')
-  async createAtCreatorsMe(@Body() dto: CreatePostDto, @Req() req: any) {
-    const user = req.user as UserJwt | undefined;
-    return this.createImpl(dto, user?.sub, user?.role);
+    return this.createImpl(dto, req);
   }
 
   /**
-   * 投稿作成本体
-   *
-   * - クリエイター権限チェック
-   * - 入力バリデーション
-   * - Creator を upsert で「存在保証」
-   * - planId が指定された場合は「同一クリエイターのプランか」を所有チェック
-   * - Post は creatorId 直書きではなく relation connect({ userId }) で作成
+   * エイリアス②: POST /creators/me/posts
+   *  - createPostSmart() の候補パスその2
    */
-  private async createImpl(dto: CreatePostDto, userId?: string, role?: string) {
-    if (!userId) throw new ForbiddenException('ログインが必要です');
+  @UseGuards(JwtAuthGuard)
+  @Post('creators/me/posts')
+  async createAtCreatorsMe(@Body() dto: CreatePostDto, @Req() req: any) {
+    return this.createImpl(dto, req);
+  }
 
-    // ===== ここから追加：KYC チェック =====
-    const creator = await this.prisma.creator.findUnique({
-      where: { userId },
-      select: { stripeKycStatus: true },
-    });
-
-    // Creator レコードがない or KYCがverified以外なら拒否
-    if (!creator || creator.stripeKycStatus !== 'verified') {
-      throw new ForbiddenException(
-        '本人確認（KYC）が完了していないため、投稿を作成できません。',
-      );
-    }
-    if (role !== 'creator') throw new ForbiddenException('クリエイターのみ投稿できます');
-
-    // ---- 入力バリデーション ----
-    const title = (dto.title ?? '').trim();
-    if (!title) throw new BadRequestException('title は必須です');
-
-    const visibility = dto.visibility as 'free' | 'plan' | 'paid_single';
-    if (!['free', 'plan', 'paid_single'].includes(visibility)) {
-      throw new BadRequestException('visibility が不正です');
+  /**
+   * 共通実装
+   */
+  private async createImpl(dto: CreatePostDto, req: any) {
+    const user = req.user as UserJwt | undefined;
+    if (!user?.sub) {
+      throw new ForbiddenException('ログインが必要です');
     }
 
-    if (visibility === 'plan' && !dto.planId) {
-      throw new BadRequestException('planId が必要です（visibility=plan）');
-    }
+    // 自分が Creator か確認して creatorId を取得
+    const creatorId = await this.creatorHelper.getMyCreatorId(user.sub);
 
-    // 価格は整数・下限チェック
-    let priceJpy: number | null = null;
-    if (visibility === 'paid_single') {
-      const n = Number(dto.priceJpy);
-      if (!Number.isFinite(n)) throw new BadRequestException('priceJpy が不正です');
-      const int = Math.trunc(n);
-      if (int < 100) throw new BadRequestException('priceJpy は100円以上にしてください');
-      priceJpy = int;
-    }
-
-    // ステータス（下書き/公開）判定を明確化
-    // - dto.status === 'draft' を下書き扱い
-    // - それ以外や未指定は公開（isPublished=true）にする
-    const isDraft =
-      (typeof dto.publishedStatus === 'string' && dto.publishedStatus.toLowerCase() === 'draft') ||
-      (dto as any).isPublished === false;
-    const now = new Date();
-
-    // 本文は bodyMd を優先、無ければ body を使う（両方無ければ空）
-    const bodyMd: string = (dto as any).bodyMd ?? (dto as any).body ?? '';
-
-    // 年齢区分はクライアントから来なければ既定値
-    const ageRating = (dto as any).ageRating ?? 'all';
-
-    // ---- Creator を upsert で存在保証（冪等）----
-    // 本番で Seed を回していなくてもここで必ず作られる
-    await this.prisma.creator.upsert({
-      where: { userId },
-      update: {},
-      create: {
-        userId,
-        publicName: '',
-        isListed: false,
-      },
-    });
-
-    // ---- planId 所有チェック（他人のプランを付けられないように）----
-    let planId: string | null = null;
-    if (visibility === 'plan') {
-      const plan = await this.prisma.plan.findUnique({
-        where: { id: dto.planId! },
-        select: { id: true, creatorId: true, isActive: true },
-      });
-      if (!plan) throw new BadRequestException('指定の planId が存在しません');
-      if (plan.creatorId !== userId) {
-        throw new BadRequestException('planId が不正です（他のクリエイターのプラン）');
-      }
-      if (!plan.isActive) {
-        throw new BadRequestException('指定のプランは非アクティブです');
-      }
-      planId = plan.id;
-    }
-
+    // 受け取り値を正規化（boolean / string 両対応）
     const toPublishedStatus = (v: unknown): PublishedStatus => {
-      if (typeof v === 'boolean') return v ? PublishedStatus.published : PublishedStatus.draft;
+      if (typeof v === 'boolean') {
+        return v ? PublishedStatus.published : PublishedStatus.draft;
+      }
       if (typeof v === 'string') {
         const s = v.toLowerCase();
         if (s === 'published') return PublishedStatus.published;
-        if (s === 'private')   return PublishedStatus.private;
+        if (s === 'private') return PublishedStatus.private;
         return PublishedStatus.draft;
-      }
-      if (v && (v === PublishedStatus.published || v === PublishedStatus.private || v === PublishedStatus.draft)) {
-        return v as PublishedStatus;
       }
       return PublishedStatus.draft;
     };
 
-    const pub = toPublishedStatus((dto as any).publishedStatus ?? (dto as any).status);
-    const pubAt = pub === PublishedStatus.published ? new Date() : null;    
+    // DTO 側の publishedStatus / status どちらでも受ける
+    const pub = toPublishedStatus(
+      (dto as any).publishedStatus ?? (dto as any).status,
+    );
+    const pubAt = pub === PublishedStatus.published ? new Date() : null;
 
-    // ---- メディア配列の整形 ----
-    const rawMedia = (dto as any).media as
-      | { mediaType: string; url: string; sortOrder?: number }[]
-      | undefined;
+    // visibility と price / planId を整合させる
+    const planId =
+      dto.visibility === Visibility.plan ? dto.planId ?? null : null;
+    const priceJpy =
+      dto.visibility === Visibility.paid_single ? dto.priceJpy ?? null : null;
 
-    const mediaData =
-      Array.isArray(rawMedia)
-        ? rawMedia
-            .filter((m) => !!m && typeof m.url === 'string' && m.url.trim() !== '')
-            .map((m, idx) => ({
-              mediaType: m.mediaType as any,
-              url: m.url.trim(),
-              sortOrder:
-                typeof m.sortOrder === 'number' && m.sortOrder >= 0
-                  ? m.sortOrder
-                  : idx,
-            }))
-        : [];    
-
-    // ---- Post 作成（creator: connect を使用）----
     const post = await this.prisma.post.create({
       data: {
-        creator: { connect: { userId } }, // ★ FK を安全に張る
-        title,
-        body: bodyMd,
-        visibility: visibility as any, // Prisma の Enum に合わせて as any でキャスト
-        ...(visibility === 'plan' && planId
-          ? { plan: { connect: { id: planId } } }
-          : {}),
-        ...(priceJpy != null ? { priceJpy } : {}),
+        title: dto.title,
+        body: dto.body,
+        visibility: dto.visibility,
+        ageRating: dto.ageRating,
         publishedStatus: pub,
         publishedAt: pubAt,
-        ageRating: ageRating as any,
-        // ★ メディアがあればネスト作成
-        ...(mediaData.length
-          ? {
-              media: {
-                createMany: {
-                  data: mediaData,
-                },
-              },
-            }
-          : {}),
+        creatorId,
+        planId,
+        priceJpy,
       },
       select: {
         id: true,

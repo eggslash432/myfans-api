@@ -36,7 +36,7 @@ export class PlansController {
       select: { stripeKycStatus: true },
     });
 
-    if (!creator || creator.stripeKycStatus !== 'verified') {
+    if (!creator || creator.stripeKycStatus !== 'approved') {
       throw new ForbiddenException(
         '本人確認（KYC）が完了していないため、プランを作成できません。',
       );

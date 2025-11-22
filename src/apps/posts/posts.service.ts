@@ -1,99 +1,157 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+// src/apps/posts/posts.service.ts
+
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Visibility, SubStatus, PaymentStatus,PaymentKind } from '@prisma/client';
-import { AccessControlService } from '../access-control/access-control.service';
+import {
+  Visibility,
+  PublishedStatus,
+  SubStatus,
+} from '@prisma/client';
+import { AccessCheckHelper } from '../helpers/access-check.helper';
 
 @Injectable()
 export class PostsService {
-  constructor(private prisma: PrismaService, private ac: AccessControlService) {}
-
-  async getPost(postId: string, viewerId?: string) {
-    const ok = await this.ac.canViewPost(postId, viewerId);
-    if (!ok) throw new ForbiddenException('購読が必要です');
-    return this.prisma.post.findUnique({ where: { id: postId } });
-  }
-
-  async findOne(id: string, viewerUserId?: string) {
-    const post = await this.prisma.post.findUnique({ where: { id } });
-    if (!post) throw new NotFoundException('投稿が見つかりません');
-
-    // free : 誰でもOK
-    if (post.visibility === Visibility.free) {
-      return post;
-    }
-
-    // plan : ログイン必須
-    if (post.visibility === Visibility.plan) {
-      if (!viewerUserId) throw new ForbiddenException('ログインが必要です');
-
-      // 自分（投稿者/クリエイター）本人は常に閲覧可
-      if (viewerUserId === post.creatorId) return post;
-
-      // 購読者（active or trialing）だけ閲覧可
-      const allowedStatuses: SubStatus[] = [SubStatus.active, SubStatus.trialing];
-      const sub = await this.prisma.subscription.findFirst({
-        where: {
-          userId: viewerUserId,
-          planId: post.planId!, // plan 投稿なら必ず存在
-          status: { in: allowedStatuses },
-        },
-      });
-      if (!sub) throw new ForbiddenException('この投稿を閲覧するには購読が必要です');
-
-      return post;
-    }
-
-    // paid_single : PPV購入済みならOK
-    if (post.visibility === Visibility.paid_single) {
-      if (!viewerUserId) throw new ForbiddenException('ログインが必要です');
-      if (viewerUserId === post.creatorId) return post; // クリエイター本人は常にOK
-
-      const pay = await this.prisma.payment.findFirst({
-        where: {
-          userId: viewerUserId,
-          postId: post.id,
-          paymentStatus: PaymentStatus.paid,
-          kind: PaymentKind.one_time,
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      // 金額チェックを入れたい場合（任意）
-      // const enough = !post.priceJpy || (pay?.amountJpy ?? 0) >= post.priceJpy;
-
-      if (!pay /* || !enough */) {
-        throw new ForbiddenException('この投稿を閲覧するには単品購入が必要です');
-      }
-      return post;
-    }
-
-    // ここに来ない想定
-    throw new ForbiddenException('アクセスできません');
-  }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessHelper: AccessCheckHelper,
+  ) {}
 
   /**
-   * 投稿詳細 + canView フラグを返す
+   * 投稿を作成
    */
-  async findOneWithCanView(id: string, viewerUserId?: string) {
-    const post = await this.prisma.post.findUnique({
-      where: { id },
-      include: {
-        media: true,
-        creator: {
-          select: {
-            userId: true,
-            publicName: true,
-          },
-        },
-        plan: true,
+  async createPost(userId: string, dto: any) {
+    const { title, body, visibility, planId, priceJpy, media } = dto;
+
+    // plan投稿なのにplanIdがない → エラー
+    if (visibility === Visibility.plan && !planId) {
+      throw new ForbiddenException('planId が必要です');
+    }
+
+    // PPV なのに price がない → エラー
+    if (visibility === Visibility.paid_single && !priceJpy) {
+      throw new ForbiddenException('価格を設定してください');
+    }
+
+    const post = await this.prisma.post.create({
+      data: {
+        creatorId: userId,
+        title,
+        body,
+        visibility,
+        planId: planId || null,
+        priceJpy: priceJpy || null,
+        publishedStatus: PublishedStatus.published,
       },
     });
 
-    if (!post) {
-      throw new NotFoundException('投稿が見つかりません');
+    // メディアがある場合まとめて保存
+    if (media?.length) {
+      await this.prisma.postMedia.createMany({
+        data: media.map((m: any, idx: number) => ({
+          postId: post.id,
+          url: m.url,
+          mediaType: m.mediaType,
+          sortOrder: idx,
+        })),
+      });
     }
 
-    const canView = await this.ac.canViewPost(id, viewerUserId);
-    return { ...post, canView };
-  }  
+    return post;
+  }
+
+  /**
+   * 投稿の詳細取得
+   * - 閲覧可能判定つき
+   */
+  async getPostDetail(postId: string, viewerId: string | null) {
+    const result = await this.accessHelper.assertCanViewPost(viewerId, postId);
+
+    const { post } = result;
+    return {
+      ...post,
+      canView: true,
+    };
+  }
+
+  /**
+   * 投稿を編集（必要なら）
+   */
+  async updatePost(userId: string, postId: string, dto: any) {
+    const post = await this.prisma.post.findUnique({ where: { id: postId } });
+    if (!post) throw new NotFoundException('投稿が見つかりません');
+
+    if (post.creatorId !== userId) {
+      throw new ForbiddenException('自分の投稿のみ編集できます');
+    }
+
+    return await this.prisma.post.update({
+      where: { id: postId },
+      data: {
+        title: dto.title ?? post.title,
+        body: dto.body ?? post.body,
+        visibility: dto.visibility ?? post.visibility,
+        planId: dto.planId ?? post.planId,
+        priceJpy: dto.priceJpy ?? post.priceJpy,
+      },
+    });
+  }
+
+  /**
+   * creator の自分の投稿一覧
+   */
+  async getMyPosts(userId: string) {
+    return await this.prisma.post.findMany({
+      where: { creatorId: userId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        media: true,
+        _count: {
+          select: {
+            postAccesses: true,
+            reports: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * 公開フィード一覧
+   * - free, plan, ppv を一覧で返す
+   * - plan / paid_single は本文なし・メディア一部だけ
+   */
+  async getPublicFeed() {
+    return await this.prisma.post.findMany({
+      where: {
+        publishedStatus: PublishedStatus.published,
+      },
+      orderBy: { publishedAt: 'desc' },
+      include: {
+        creator: {
+          select: {
+            publicName: true,
+          },
+        },
+        media: true,
+      },
+    });
+  }
+
+  /**
+   * 投稿通報
+   */
+  async reportPost(userId: string, postId: string, reason: string) {
+    const post = await this.prisma.post.findUnique({ where: { id: postId } });
+    if (!post) throw new NotFoundException('投稿が見つかりません');
+
+    await this.prisma.report.create({
+      data: {
+        postId,
+        userId,
+        reason,
+      },
+    });
+
+    return { ok: true };
+  }
 }

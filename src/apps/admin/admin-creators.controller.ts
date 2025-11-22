@@ -1,66 +1,146 @@
-import { Controller, Get, Patch, Param, Body, UseGuards, BadRequestException } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { Roles } from '../auth/roles.decorator';
-import { RolesGuard } from '../auth/roles.guard';
+// src/apps/admin/admin-creators.controller.ts
+
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Query,
+  UseGuards,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AdminOnlyGuard } from '../access-control/admin-only.guard';
 
-@Controller('admin/creators')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('admin')
+class UpdateListingBody {
+  isListed!: boolean;
+}
+
+@UseGuards(JwtAuthGuard, AdminOnlyGuard)
+@Controller('api/admin/creators')
 export class AdminCreatorsController {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  // 未掲載（審査待ち）一覧: GET /admin/creators?status=pending
+  /**
+   * クリエイター一覧
+   * - 管理画面の「クリエイター管理」テーブル用
+   * - isListed / kycStatus で簡易フィルタ可能
+   *
+   * 例:
+   * GET /api/admin/creators?isListed=true
+   * GET /api/admin/creators?kycStatus=pending
+   */
   @Get()
-  async listPending(): Promise<{ items: any[] }> {
-    const rows = await this.prisma.creator.findMany({
-      where: { isListed: false, user: { isActive: true } },
-      select: {
-        userId: true,
-        publicName: true,
-        createdAt: true,
-        isListed: true,
-        user: { 
-          select: { 
-            email: true, 
+  async listCreators(
+    @Query('isListed') isListed?: string,
+    @Query('kycStatus') kycStatus?: string,
+  ) {
+    const where: any = {};
+
+    if (typeof isListed === 'string') {
+      if (isListed === 'true') where.isListed = true;
+      if (isListed === 'false') where.isListed = false;
+    }
+
+    if (kycStatus) {
+      // Creator.stripeKycStatus は String? なのでそのままマッチ
+      where.stripeKycStatus = kycStatus;
+    }
+
+    const creators = await this.prisma.creator.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
             role: true,
-            profile:{
-              select: {
-                bio: true
-              }
-            }
-          } 
+            isActive: true,
+            createdAt: true,
+          },
+        },
+        _count: {
+          select: {
+            posts: true,
+            subscriptions: true,
+            payouts: true,
+          },
         },
       },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
     });
-    const items = rows.map(r => ({
-      id: r.userId,
-      displayName: r.publicName,
-      email: r.user.email,
-      role: r.user.role,
-      bio: r.user.profile?.bio ?? '',
-      createdAt: r.createdAt,
-      isListed: r.isListed,
+
+    return creators.map((c) => ({
+      userId: c.userId,
+      email: c.user?.email ?? '',
+      publicName: c.publicName,
+      isListed: c.isListed,
+      stripeKycStatus: c.stripeKycStatus,
+      stripeChargesEnabled: c.stripeChargesEnabled,
+      stripePayoutsEnabled: c.stripePayoutsEnabled,
+      createdAt: c.createdAt,
+      userCreatedAt: c.user?.createdAt,
+      postsCount: c._count.posts,
+      subsCount: c._count.subscriptions,
+      payoutsCount: c._count.payouts,
     }));
-    return { items };
   }
 
-  // 掲載切替: PATCH /admin/creators/:userId/listing
-  @Patch(':userId/listing')
-  async setListing(
-    @Param('userId') userId: string,
-    @Body() body: { isListed?: boolean }
-  ) {
-    if (typeof body?.isListed !== 'boolean') {
-      throw new BadRequestException('isListed(boolean) を指定してください');
+  /**
+   * クリエイター詳細
+   * - 必要であれば詳細モーダルなどから利用
+   */
+  @Get(':userId')
+  async getCreator(@Param('userId') userId: string) {
+    const creator = await this.prisma.creator.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            isActive: true,
+            createdAt: true,
+          },
+        },
+        plans: true,
+      },
+    });
+
+    if (!creator) {
+      throw new BadRequestException('クリエイターが見つかりません');
     }
+
+    return creator;
+  }
+
+  /**
+   * 掲載 ON/OFF 切り替え
+   *
+   * PATCH /api/admin/creators/:userId/listing
+   * { "isListed": true }
+   */
+  @Patch(':userId/listing')
+  async updateListing(
+    @Param('userId') userId: string,
+    @Body() body: UpdateListingBody,
+  ) {
+    if (typeof body.isListed !== 'boolean') {
+      throw new BadRequestException('isListed は boolean で指定してください');
+    }
+
     const updated = await this.prisma.creator.update({
       where: { userId },
       data: { isListed: body.isListed },
-      select: { userId: true, isListed: true },
     });
-    return { id: updated.userId, isListed: updated.isListed };
+
+    return {
+      ok: true,
+      userId: updated.userId,
+      isListed: updated.isListed,
+    };
   }
 }

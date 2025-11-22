@@ -35,7 +35,7 @@ export class CreatorPayoutsController {
       },
     });
 
-    if (!creator || creator.stripeKycStatus !== 'verified') {
+    if (!creator || creator.stripeKycStatus !== 'approved') {
       throw new ForbiddenException('KYC未完了のため残高を取得できません。');
     }
 
@@ -63,7 +63,7 @@ export class CreatorPayoutsController {
       },
     });
 
-    if (!creator || creator.stripeKycStatus !== 'verified') {
+    if (!creator || creator.stripeKycStatus !== 'approved') {
       throw new ForbiddenException('KYC未完了のため出金履歴を表示できません。');
     }
 
@@ -92,7 +92,7 @@ export class CreatorPayoutsController {
       },
     });
 
-    if (!creator || creator.stripeKycStatus !== 'verified') {
+    if (!creator || creator.stripeKycStatus !== 'approved') {
       throw new ForbiddenException('KYC未完了のため出金リクエストはできません。');
     }
 
