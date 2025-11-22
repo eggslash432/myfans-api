@@ -383,4 +383,18 @@ export class PostsController {
     const viewerId: string | undefined = req.user?.sub ?? undefined;
     return this.posts.findOneWithCanView(id, viewerId);
   }  
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/report')
+  async reportPost(@Req() req: any, @Param('id') id: string, @Body() body: { reason: string }) {
+    const userId = req.user.sub;
+    await this.prisma.report.create({
+      data: {
+        postId: id,
+        userId,
+        reason: body.reason,
+      },
+    });
+    return { ok: true };
+  }  
 }

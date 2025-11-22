@@ -57,4 +57,26 @@ export class AdminPostsController {
     });
     return updated;
   }
+
+  // 通報一覧
+  @Get(':id/reports')
+  async getReports(@Param('id') id: string) {
+    return this.prisma.report.findMany({
+      where: { postId: id },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // 通報対応済みにする
+  @Patch('reports/:reportId/resolve')
+  async resolveReport(@Param('reportId') reportId: string) {
+    await this.prisma.report.update({
+      where: { id: reportId },
+      data: {
+        status: 'reviewed',   // ← ここだけ修正
+      },
+    });
+    return { ok: true };
+  }
+
 }

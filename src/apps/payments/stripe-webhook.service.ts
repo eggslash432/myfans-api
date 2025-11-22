@@ -2,22 +2,40 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import Stripe from 'stripe';
-import { PaymentKind, PaymentStatus, SubStatus } from '@prisma/client';
+import { KycStatus, PaymentKind, PaymentStatus, SubStatus } from '@prisma/client';
+import { PaymentsService } from './payments.service';
 
 @Injectable()
 export class StripeWebhookService {
   private readonly logger = new Logger(StripeWebhookService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly payments: PaymentsService,
+  ) {}
 
-  // --- KYC 更新 ---
   async handleAccountUpdated(account: Stripe.Account) {
     const kyc = account.requirements;
 
-    const status =
-      kyc?.disabled_reason === null && (kyc?.currently_due?.length ?? 0) === 0
-        ? 'approved'
-        : 'pending';
+    let status: KycStatus;
+
+    // 1. 明確にリジェクトされているパターン
+    if (kyc?.disabled_reason?.startsWith('rejected')) {
+      status = KycStatus.rejected;  // フロントからもわかりやすい
+    }
+    // 2. disabled_reason なし & currently_due/past_due/eventually_due が全部空 → OK
+    else if (
+      kyc?.disabled_reason == null &&
+      (kyc?.currently_due?.length ?? 0) === 0 &&
+      (kyc?.past_due?.length ?? 0) === 0 &&
+      (kyc?.eventually_due?.length ?? 0) === 0
+    ) {
+      status = KycStatus.approved;  // ★ フロントの isKycOk === 'verified' に合わせる
+    }
+    // 3. それ以外は pending
+    else {
+      status = KycStatus.pending;
+    }
 
     await this.prisma.creator.updateMany({
       where: { stripeAccountId: account.id },
@@ -37,6 +55,7 @@ export class StripeWebhookService {
       `Stripe account ${account.id} KYC updated -> ${status}`,
     );
   }
+
 
   // --- Checkout 完了（PPV / 初回決済） ---
   async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
@@ -93,27 +112,6 @@ export class StripeWebhookService {
         );
       }
     }
-
-    // クリエイター取り分と運営取り分を算出
-    const creatorAmountJpy = Math.floor(
-      (amountJpy * creatorSharePercent) / 100,
-    );
-    const platformAmountJpy = amountJpy - creatorAmountJpy;
-    // ===== 分配ロジックここまで =====    
-
-    await this.prisma.payment.create({
-      data: {
-        userId,
-        creatorId: creatorId ?? undefined,
-        planId: planId ?? undefined,
-        postId: postId ?? undefined,
-        amountJpy,
-        kind,
-        externalTxId,
-        paymentStatus,
-        paidAt: new Date(),
-      },
-    });
 
     // PPV（単品）購入なら PostAccess を付与
     if (postId && !planId) {
@@ -241,6 +239,21 @@ export class StripeWebhookService {
 
     if (!dbSub) return;
 
+    // ★ 分配付きの Payment を作成
+    const amountJpy =
+      typeof invoice.amount_paid === 'number' ? invoice.amount_paid : 0;
+    if (amountJpy) {
+      await this.payments.createPaymentWithShare({
+        userId: dbSub.userId,
+        creatorId: dbSub.creatorId,
+        planId: dbSub.planId,
+        postId: null,
+        amountJpy,
+        kind: 'subscription',
+        externalTxId: invoice.id,
+      });
+    }    
+
     // その Creator の ALL 投稿の中で
     // visibility=plan の投稿にアクセス権をつける
     const posts = await this.prisma.post.findMany({
@@ -292,6 +305,24 @@ export class StripeWebhookService {
       this.logger.warn(`Post not found for PPV purchase: ${postId}`);
       return;
     }
+
+    // ★ ここで Payment + 分配を記録する
+    const amountJpy =
+      typeof pi.amount_received === 'number' ? pi.amount_received : 0;
+    if (!amountJpy) {
+      this.logger.warn(`PI succeeded but amount_received is 0. pi.id=${pi.id}`);
+      return;
+    }
+
+    await this.payments.createPaymentWithShare({
+      userId,
+      creatorId: creatorId ?? post.creatorId,
+      planId: null,
+      postId,
+      amountJpy,
+      kind: 'one_time',
+      externalTxId: pi.id,
+    });    
 
     // PostAccess を付与（すでにあれば無視）
     await this.prisma.postAccess.upsert({

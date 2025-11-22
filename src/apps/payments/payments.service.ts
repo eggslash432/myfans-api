@@ -237,4 +237,67 @@ export class PaymentsService {
 
     return customer.id;
   }
+
+  /**
+   * Payment + 分配（Creator / Platform）を作成する内部ヘルパー
+   */
+  async createPaymentWithShare(params: {
+    userId: string;
+    creatorId: string;
+    planId?: string | null;
+    postId?: string | null;
+    amountJpy: number;
+    kind: 'subscription' | 'one_time';
+    externalTxId?: string | null;
+  }) {
+    const {
+      userId,
+      creatorId,
+      planId,
+      postId,
+      amountJpy,
+      kind,
+      externalTxId,
+    } = params;
+
+    // プランの分配率を取得（デフォルト80/20）
+    let creatorShare = 80;
+    let platformShare = 20;
+
+    if (planId) {
+      const plan = await this.prisma.plan.findUnique({
+        where: { id: planId },
+        select: {
+          creatorSharePercent: true,
+          platformSharePercent: true,
+        },
+      });
+      if (plan) {
+        creatorShare = plan.creatorSharePercent;
+        platformShare = plan.platformSharePercent;
+      }
+    }
+
+    // 分配計算
+    const creatorAmountJpy = Math.floor((amountJpy * creatorShare) / 100);
+    const platformAmountJpy = amountJpy - creatorAmountJpy;
+
+    // Payment レコード作成
+    return this.prisma.payment.create({
+      data: {
+        userId,
+        creatorId,
+        planId,
+        postId,
+        amountJpy,
+        kind,
+        externalTxId: externalTxId ?? null,
+        paymentStatus: 'paid',
+        paidAt: new Date(),
+        creatorAmountJpy,
+        platformAmountJpy,
+      },
+    });
+  }
+  
 }
