@@ -1,5 +1,5 @@
-/*
-prisma/schema.prisma
+/**
+ * prisma/schema.prisma
  */
 
 generator client {
@@ -26,7 +26,7 @@ enum KycStatus {
   rejected
 }
 
-enum PublishedStatus{
+enum PublishedStatus {
   draft
   published
   private
@@ -57,7 +57,7 @@ enum MediaType {
   audio
 }
 
-enum CheckoutMode{
+enum CheckoutMode {
   payment
   subscription
 }
@@ -105,6 +105,7 @@ model User {
   subscriptions  Subscription[]
   favorites      Favorite[]
   payments       Payment[]
+  postAccesses   PostAccess[]
 
   @@index([role])
   @@index([isActive])
@@ -124,27 +125,27 @@ model Profile {
  * ===== Creator & KYC =====
  */
 model Creator {
-  userId      String   @id
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  publicName  String
-  bankAccount Json?
-  stripeAccountId String?
-  stripeKycStatus String?
-  stripeChargesEnabled   Boolean  @default(false)
-  stripePayoutsEnabled   Boolean  @default(false)
+  userId                  String   @id
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicName              String
+  bankAccount             Json?
+  stripeAccountId         String?
+  stripeKycStatus         String?
+  stripeChargesEnabled    Boolean  @default(false)
+  stripePayoutsEnabled    Boolean  @default(false)
   stripeKycDisabledReason String?
   stripeKycErrors         String?
-  stripeKycFieldsDue      String?  
-  isListed    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  stripeKycFieldsDue      String?
+  isListed                Boolean  @default(false)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
-  plans    Plan[]
-  posts    Post[]     @relation("CreatorPosts")
-  payouts  Payout[]
-  Favorite Favorite[]
-  Payment  Payment[]
-  subscription Subscription[]
+  plans         Plan[]
+  posts         Post[]         @relation("CreatorPosts")
+  payouts       Payout[]
+  favorites     Favorite[]
+  payments      Payment[]
+  subscriptions Subscription[]
 
   @@index([isListed])
 }
@@ -169,20 +170,20 @@ model KycSubmission {
  * ===== Plans & Subscriptions =====
  */
 model Plan {
-  id              String   @id @default(uuid())
-  creator         Creator  @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  id              String          @id @default(uuid())
+  creator         Creator         @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
   creatorId       String
   name            String
   priceJpy        Int
   description     String?
-  isActive        Boolean  @default(true)
+  isActive        Boolean         @default(true)
   billingInterval BillingInterval @default(month)
   externalPriceId String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-  creatorSharePercent  Int @default(80) 
-  platformSharePercent Int @default(20) 
+  creatorSharePercent  Int @default(80)
+  platformSharePercent Int @default(20)
 
   subscriptions Subscription[]
   posts         Post[]
@@ -199,21 +200,21 @@ model WebhookLog {
 }
 
 model Subscription {
-  id                 String    @id @default(uuid())
-  userId             String
-  creatorId          String
-  planId             String
-  stripeSubscriptionId  String @unique　
-  status             SubStatus
-  currentPeriodStart DateTime
-  currentPeriodEnd   DateTime
-  cancelAtPeriodEnd  Boolean   @default(false)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  
-  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  creator            Creator   @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
-  plan               Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  id                   String    @id @default(uuid())
+  userId               String
+  creatorId            String
+  planId               String
+  stripeSubscriptionId String    @unique
+  status               SubStatus
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
 
   @@unique([userId, creatorId, planId])
   @@index([status])
@@ -224,23 +225,24 @@ model Subscription {
  * ===== Posts =====
  */
 model Post {
-  id              String     @id @default(uuid())
+  id              String          @id @default(uuid())
   creatorId       String
-  creator         Creator    @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
+  creator         Creator         @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
   title           String
   body            String?
   visibility      Visibility
-  plan            Plan?      @relation(fields: [planId], references: [id])
+  plan            Plan?           @relation(fields: [planId], references: [id])
   planId          String?
-  publishedStatus PublishedStatus  @default(draft)
+  publishedStatus PublishedStatus @default(draft)
   publishedAt     DateTime?
-  ageRating       AgeRating  @default(all)
+  ageRating       AgeRating       @default(all)
   priceJpy        Int?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-  media   PostMedia[]
-  Payment Payment[]
+  media        PostMedia[]
+  Payment      Payment[]
+  postAccesses PostAccess[]
 
   @@index([creatorId, publishedStatus])
   @@index([visibility, planId])
@@ -260,7 +262,9 @@ model PostMedia {
 
 model PostAccess {
   id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
   postId    String
   expiresAt DateTime?
 
@@ -285,24 +289,24 @@ model Favorite {
  * ===== Payments & Operational =====
  */
 model Payment {
-  id           String        @id @default(uuid())
-  user         User?         @relation(fields: [userId], references: [id])
-  userId       String?
-  creator      Creator?      @relation(fields: [creatorId], references: [userId])
-  creatorId    String?
-  plan         Plan?         @relation(fields: [planId], references: [id])
-  planId       String?
-  post         Post?         @relation(fields: [postId], references: [id])
-  postId       String?
-  amountJpy    Int
-  kind         PaymentKind
-  externalTxId String?       @unique
-  paymentStatus       PaymentStatus
-  paidAt       DateTime?
-  createdAt    DateTime      @default(now())
+  id            String        @id @default(uuid())
+  user          User?         @relation(fields: [userId], references: [id])
+  userId        String?
+  creator       Creator?      @relation(fields: [creatorId], references: [userId])
+  creatorId     String?
+  plan          Plan?         @relation(fields: [planId], references: [id])
+  planId        String?
+  post          Post?         @relation(fields: [postId], references: [id])
+  postId        String?
+  amountJpy     Int
+  kind          PaymentKind
+  externalTxId  String?       @unique
+  paymentStatus PaymentStatus
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
 
-  creatorAmountJpy   Int?    
-  platformAmountJpy  Int?   
+  creatorAmountJpy  Int?
+  platformAmountJpy Int?
 
   @@index([paymentStatus, createdAt])
   @@index([creatorId])
@@ -311,14 +315,14 @@ model Payment {
 }
 
 model Payout {
-  id          String       @id @default(uuid())
-  creator     Creator      @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
-  creatorId   String
-  amountJpy   Int
-  payoutStatus      PayoutStatus
-  requestedAt DateTime     @default(now())
-  paidAt      DateTime?
-  note        String?
+  id           String       @id @default(uuid())
+  creator      Creator      @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  creatorId    String
+  amountJpy    Int
+  payoutStatus PayoutStatus
+  requestedAt  DateTime     @default(now())
+  paidAt       DateTime?
+  note         String?
 
   @@index([creatorId, payoutStatus])
 }
