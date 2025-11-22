@@ -20,37 +20,35 @@ export class PayoutsService {
   /**
    * クリエイターの現在引き出せる残高（円）を算出
    */
-  async getCreatorBalanceJpy(creatorUserId: string): Promise<number> {
-    // 1) 支払済み売上合計
-    // ★ クリエイター取り分だけ合計する
-    const paidAgg = await this.prisma.payment.aggregate({
-      where: {
-        creatorId: creatorUserId,
-        paymentStatus: PaymentStatus.paid,
-      },
-      _sum: { creatorAmountJpy: true },
-    });
-    const totalIncome = paidAgg._sum.creatorAmountJpy ?? 0;
+async getCreatorBalanceJpy(creatorId: string): Promise<number> {
 
-    // 2) すでに出金に回した合計（requested / approved / paid）
-    const usedAgg = await this.prisma.payout.aggregate({
-      where: {
-        creatorId: creatorUserId,
-        payoutStatus: {
-          in: [
-            PayoutStatus.requested,
-            PayoutStatus.approved,
-            PayoutStatus.paid,
-          ],
-        },
-      },
-      _sum: { amountJpy: true },
-    });
-    const alreadyRequested = usedAgg._sum.amountJpy ?? 0;
+  // ① 支払われた売上（creator 取り分）
+  const income = await this.prisma.payment.aggregate({
+    where: {
+      creatorId,
+      paymentStatus: 'paid',
+    },
+    _sum: {
+      creatorAmountJpy: true,
+    },
+  });
 
-    const available = totalIncome - alreadyRequested;
-    return available > 0 ? available : 0;
-  }
+  // ② すでに出金済みの金額
+  const payouts = await this.prisma.payout.aggregate({
+    where: {
+      creatorId,
+      payoutStatus: 'paid',
+    },
+    _sum: {
+      amountJpy: true,
+    },
+  });
+
+  const totalIncome = income._sum.creatorAmountJpy ?? 0;
+  const totalPayout = payouts._sum.amountJpy ?? 0;
+
+  return totalIncome - totalPayout;
+}
 
   /**
    * クリエイターが出金リクエストを行う
@@ -163,4 +161,49 @@ export class PayoutsService {
       },
     });
   }
+
+  async approvePayout(payoutId: string) {
+    // 1) 対象 payout を DB から取得
+    const payout = await this.prisma.payout.findUnique({
+      where: { id: payoutId },
+      include: {
+        creator: true,
+      },
+    });
+
+    if (!payout) throw new Error('Payout not found');
+    if (payout.payoutStatus !== 'requested') {
+      throw new Error('Already processed');
+    }
+
+    const creator = payout.creator;
+
+    if (!creator.stripeAccountId) {
+      throw new Error('Creator has no Stripe account');
+    }
+
+    // 2) Stripe Transfer（運営 → クリエイター）
+    const transfer = await this.stripe.transfers.create({
+      amount: payout.amountJpy,
+      currency: 'jpy',
+      destination: creator.stripeAccountId,
+      description: `Payout ${payout.id}`,
+    });
+
+    // 3) DB に反映
+    await this.prisma.payout.update({
+      where: { id: payout.id },
+      data: {
+        payoutStatus: 'paid',
+        paidAt: new Date(),
+        note: `Stripe Transfer ID: ${transfer.id}`,
+      },
+    });
+
+    return {
+      ok: true,
+      transferId: transfer.id,
+    };
+  }
+
 }

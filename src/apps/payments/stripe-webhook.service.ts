@@ -64,6 +64,43 @@ export class StripeWebhookService {
         ? session.payment_intent
         : session.id;
 
+    // ===== ここから分配ロジック =====
+    // デフォルトは 80%:20%
+    let creatorSharePercent = 80;
+
+    // プラン課金なら Plan の設定値を優先
+    if (planId) {
+      const plan = await this.prisma.plan.findUnique({
+        where: { id: planId },
+        select: {
+          creatorSharePercent: true,
+          platformSharePercent: true,
+        },
+      });
+
+      if (plan?.creatorSharePercent != null) {
+        creatorSharePercent = plan.creatorSharePercent;
+      }
+
+      // ※ platformSharePercent は使わなくても良いが、
+      //   異常値（合計が100でないなど）はログに出しておくと安心。
+      const totalPercent =
+        (plan?.creatorSharePercent ?? 0) +
+        (plan?.platformSharePercent ?? 0);
+      if (totalPercent !== 100) {
+        this.logger.warn(
+          `Plan share percent total != 100. planId=${planId}, total=${totalPercent}`,
+        );
+      }
+    }
+
+    // クリエイター取り分と運営取り分を算出
+    const creatorAmountJpy = Math.floor(
+      (amountJpy * creatorSharePercent) / 100,
+    );
+    const platformAmountJpy = amountJpy - creatorAmountJpy;
+    // ===== 分配ロジックここまで =====    
+
     await this.prisma.payment.create({
       data: {
         userId,
@@ -104,6 +141,7 @@ export class StripeWebhookService {
   async handleSubscriptionUpdated(sub: Stripe.Subscription) {
     const userId = (sub.metadata?.userId ?? undefined) as string | undefined;
     const planId = (sub.metadata?.planId ?? undefined) as string | undefined;
+    const subId = sub.id;
 
     // creatorId は metadata か Plan から補完
     let creatorId: string | undefined = (sub.metadata?.creatorId ??
@@ -144,7 +182,17 @@ export class StripeWebhookService {
     const periodEndSec: number = anySub.current_period_end ?? 0;
 
     const periodStart = new Date(periodStartSec * 1000);
-    const periodEnd = new Date(periodEndSec * 1000);
+    const periodEnd = new Date(periodEndSec * 1000);   
+
+    await this.prisma.subscription.updateMany({
+      where: { stripeSubscriptionId: subId },
+      data: {
+        status: subStatus,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+        cancelAtPeriodEnd: sub.cancel_at_period_end || false,
+      },
+    });   
 
     await this.prisma.subscription.upsert({
       where: {
@@ -175,4 +223,94 @@ export class StripeWebhookService {
       `subscription.updated handled. subId=${sub.id}, userId=${userId}, planId=${planId}, status=${subStatus}`,
     );
   }
+
+  async handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
+    const inv = invoice as any;
+    const subscriptionId = inv.subscription as string | null;
+    if (!subscriptionId) return;
+
+    // subscription_id → DB 内の Subscription を特定
+    const dbSub = await this.prisma.subscription.findUnique({
+      where: { stripeSubscriptionId: String(subscriptionId) },
+      select: {
+        userId: true,
+        creatorId: true,
+        planId: true,
+      },
+    });
+
+    if (!dbSub) return;
+
+    // その Creator の ALL 投稿の中で
+    // visibility=plan の投稿にアクセス権をつける
+    const posts = await this.prisma.post.findMany({
+      where: {
+        creatorId: dbSub.creatorId,
+        visibility: 'plan',
+        planId: dbSub.planId,
+      },
+      select: { id: true },
+    });
+
+    for (const p of posts) {
+      await this.prisma.postAccess.upsert({
+        where: {
+          userId_postId: {
+            userId: dbSub.userId,
+            postId: p.id,
+          },
+        },
+        create: {
+          userId: dbSub.userId,
+          postId: p.id,
+          // プランなら次回更新日まで
+          expiresAt: null,
+        },
+        update: {},
+      });
+    }
+  }
+
+  async handlePaymentIntentSucceeded(pi: Stripe.PaymentIntent) {
+    const m = pi.metadata || {};
+
+    // metadata 必須チェック
+    const userId = m.userId;
+    const postId = m.postId;
+    const creatorId = m.creatorId; // あってもなくてもOK（後でDBから引ける）
+
+    if (!userId || !postId) {
+      this.logger.warn('PI succeeded but missing metadata');
+      return;
+    }
+
+    // Post が存在するか確認（安全目的）
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+    });
+    if (!post) {
+      this.logger.warn(`Post not found for PPV purchase: ${postId}`);
+      return;
+    }
+
+    // PostAccess を付与（すでにあれば無視）
+    await this.prisma.postAccess.upsert({
+      where: {
+        userId_postId: {
+          userId,
+          postId,
+        },
+      },
+      create: {
+        userId,
+        postId,
+        // PPVは無期限アクセス
+        expiresAt: null,
+      },
+      update: {},
+    });
+
+    this.logger.log(`PPV unlocked: user=${userId}, post=${postId}`);
+  }
+
 }

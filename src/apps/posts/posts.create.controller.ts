@@ -12,12 +12,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { PublishedStatus } from '@prisma/client';
-
-type UserJwt = {
-  sub: string;              // userId
-  role: 'fan' | 'creator' | 'admin';
-  email?: string;
-};
+import { UserJwt } from 'src/shared/types';
 
 @Controller()
 export class PostsCreateController {
@@ -49,6 +44,19 @@ export class PostsCreateController {
    */
   private async createImpl(dto: CreatePostDto, userId?: string, role?: string) {
     if (!userId) throw new ForbiddenException('ログインが必要です');
+
+    // ===== ここから追加：KYC チェック =====
+    const creator = await this.prisma.creator.findUnique({
+      where: { userId },
+      select: { stripeKycStatus: true },
+    });
+
+    // Creator レコードがない or KYCがverified以外なら拒否
+    if (!creator || creator.stripeKycStatus !== 'verified') {
+      throw new ForbiddenException(
+        '本人確認（KYC）が完了していないため、投稿を作成できません。',
+      );
+    }
     if (role !== 'creator') throw new ForbiddenException('クリエイターのみ投稿できます');
 
     // ---- 入力バリデーション ----

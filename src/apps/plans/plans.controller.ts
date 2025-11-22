@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { BillingInterval } from '@prisma/client';
 import { CreatorOnlyGuard } from '../access-control/creator-only.guard';
 import { CreatorHelper } from '../helpers/creator.helper';
+import { UserJwt } from 'src/shared/types';
 
 @Controller('plans')
 export class PlansController {
@@ -19,11 +20,27 @@ export class PlansController {
   @UseGuards(JwtAuthGuard, CreatorOnlyGuard)   // クリエイターのみ
   async create(@Body() dto: CreatePlanDto, @Req() req) {
 
+    const user = req.user as UserJwt | undefined;
+    if (!user) throw new ForbiddenException();    
+
     const userId = req.user?.sub;
     if (!userId) throw new BadRequestException('未ログインです');
 
     const creatorId = await this.creatorHelper.getMyCreatorId(userId).catch(() => null);
     if (!creatorId) throw new ForbiddenException('クリエイター登録がありません');  
+
+
+    // ★ KYC チェック追加
+    const creator = await this.prisma.creator.findUnique({
+      where: { userId: user.sub },
+      select: { stripeKycStatus: true },
+    });
+
+    if (!creator || creator.stripeKycStatus !== 'verified') {
+      throw new ForbiddenException(
+        '本人確認（KYC）が完了していないため、プランを作成できません。',
+      );
+    }    
 
     try{
       const plan = this.prisma.plan.create({

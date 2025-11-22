@@ -106,6 +106,7 @@ model User {
   favorites      Favorite[]
   payments       Payment[]
   postAccesses   PostAccess[]
+  reports        Report[]
 
   @@index([role])
   @@index([isActive])
@@ -243,6 +244,7 @@ model Post {
   media        PostMedia[]
   Payment      Payment[]
   postAccesses PostAccess[]
+  reports      Report[]
 
   @@index([creatorId, publishedStatus])
   @@index([visibility, planId])
@@ -338,4 +340,16 @@ model WebhookEvent {
   processedAt    DateTime?
 
   @@index([provider, eventType, createdAt])
+}
+
+model Report {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  reason    String?
+  createdAt DateTime @default(now())
+  status    String @default("pending") // pending / reviewed / dismissed
+
+  post   Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user   User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

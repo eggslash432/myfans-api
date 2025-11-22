@@ -24,10 +24,10 @@ export class AdminPayoutsController {
     return this.payouts.adminListPayouts(status);
   }
 
+  @UseGuards(JwtAuthGuard, AdminOnlyGuard)
   @Post(':id/approve')
-  async approve(@Param('id') id: string, @Req() req: any) {
-    const adminId = req.user.sub as string;
-    return this.payouts.adminApproveAndTransfer(id, adminId);
+  async approve(@Param('id') id: string) {
+    return this.payouts.approvePayout(id);
   }
 
   @Post(':id/reject')

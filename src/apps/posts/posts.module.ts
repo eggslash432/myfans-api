@@ -8,10 +8,17 @@ import { PostsMediaController } from './posts.media.controller';
 import { S3Service } from '../s3/s3.service';
 import { HelpersModule } from '../helpers/helpers.module';
 import { PostsFetchController } from './posts.fetch.controller';
+import { PostsReportController } from './posts.report.controller';
 
 @Module({
   imports: [AccessControlModule, HelpersModule],
   providers: [PostsService, PrismaService, S3Service],
-  controllers: [PostsController,PostsCreateController, PostsMediaController, PostsFetchController],
+  controllers: [
+    PostsController,
+    PostsCreateController, 
+    PostsMediaController, 
+    PostsFetchController,
+    PostsReportController,
+  ],
 })
 export class PostsModule {}

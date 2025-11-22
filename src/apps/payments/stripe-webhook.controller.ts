@@ -72,11 +72,24 @@ export class StripeWebhookController {
         break;
 
       case 'customer.subscription.updated':
+        await this.webhookService.handleSubscriptionUpdated(event.data.object as Stripe.Subscription);
+        break;
+
+      case 'invoice.payment_succeeded':
+        await this.webhookService.handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice);
+        break;
+        
       case 'customer.subscription.deleted':
         await this.webhookService.handleSubscriptionUpdated(
           event.data.object as Stripe.Subscription,
         );
         break;
+
+      case 'payment_intent.succeeded':
+        await this.webhookService.handlePaymentIntentSucceeded(
+          event.data.object as Stripe.PaymentIntent,
+        );
+        break;        
 
       default:
         // 必要ならログだけ残す

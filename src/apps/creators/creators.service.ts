@@ -66,6 +66,36 @@ export class CreatorsService {
     return creator;
   }
 
+  async getCreator(userId: string) {
+    const creator = await this.prisma.creator.findUnique({
+      where: { userId },
+      select: {
+        userId: true,
+        publicName: true,
+        stripeAccountId: true,
+        stripeKycStatus: true,
+        stripeChargesEnabled: true,
+        stripePayoutsEnabled: true,
+        stripeKycDisabledReason: true,
+        stripeKycErrors: true,
+        stripeKycFieldsDue: true,
+        isListed: true,
+      },
+    });
+
+    return {
+      ...creator,
+      kyc: {
+        status: creator?.stripeKycStatus,
+        chargesEnabled: creator?.stripeChargesEnabled,
+        payoutsEnabled: creator?.stripePayoutsEnabled,
+        disabledReason: creator?.stripeKycDisabledReason,
+        errors: creator?.stripeKycErrors,
+        fieldsDue: creator?.stripeKycFieldsDue,
+      },
+    };
+  }  
+
   async createSubscriptionCheckout(creatorId: string, planId: string) {
     const plan = await this.prisma.plan.findUnique({ where: { id: planId } });
     if (!plan || plan.creatorId !== creatorId) throw new NotFoundException('Plan not found');
