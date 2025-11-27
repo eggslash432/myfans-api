@@ -12,8 +12,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; email: string; role: string }) {
+  async validate(
+    payload: { 
+      sub: string; 
+      email: string; 
+      role: string;
+      creatorId: string;
+    }
+  ) {
+    console.log('JWT payload in validate:', payload);
     // payload をそのまま req.user に載せる
-    return { sub: payload.sub, email: payload.email, role: payload.role };
+    return { 
+      sub: payload.sub, 
+      email: payload.email, 
+      role: payload.role,
+      creatorId: payload.creatorId,   // ★追加 
+    };
   }
 }

@@ -1,6 +1,11 @@
+//tsconfig.build.json
+
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node", 
+    "resolvePackageJsonExports": false,
     "rootDir": "src",       // ソースのルート
     "outDir": "dist",       // 出力先
     "removeComments": true,

@@ -55,6 +55,7 @@ export class AuthService {
     };
   }  
 
+    /** ←← ここを全面差し替え */
   /** ←← ここを全面差し替え */
   async login(dto: { email: string; password: string }) {
     const email = dto.email.toLowerCase().trim();
@@ -72,10 +73,25 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const access_token  = await this.signAccessToken(user.id, user.role, user.email);
-    const refresh_token = await this.signRefreshToken(user.id, user.role, user.email);
+    // ★ ここで最新の role を DB から再取得！
+    const freshUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: { id: true, email: true, role: true },
+    });
 
-    return { access_token, refresh_token, user: { id: user.id, email: user.email, role: user.role } };
+    // ★ TypeScript エラー対策：null チェック
+    if (!freshUser) {
+      throw new UnauthorizedException('User not found'); 
+    }    
+
+    const access_token  = await this.signAccessToken(freshUser.id, freshUser.role, freshUser.email);
+    const refresh_token = await this.signRefreshToken(freshUser.id, freshUser.role, freshUser.email);
+
+    return { 
+      access_token, 
+      refresh_token, 
+      user: { id: freshUser.id, email: freshUser.email, role: freshUser.role } 
+    };
   }
 
   async rotateAccessToken(refresh_token: string) {

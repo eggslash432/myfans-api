@@ -1,7 +1,6 @@
 import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
-import { Role } from '@prisma/client';
 
 @Injectable()
 export class PlansService {

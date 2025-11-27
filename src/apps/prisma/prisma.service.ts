@@ -1,14 +1,18 @@
 // src/prisma/prisma.service.ts
 import { INestApplication, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService 
+  extends PrismaClient 
+  implements OnModuleInit, OnModuleDestroy 
+{
   constructor() {
     super({
-      // ← これだけでクエリ・警告・情報・エラーが標準出力に出ます（所要ms含む）
       log: ['query', 'info', 'warn', 'error'],
     });
+
+    console.log('PrismaService: DATABASE_URL =', process.env.DATABASE_URL);
   }
 
   async onModuleInit() {

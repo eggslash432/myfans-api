@@ -36,14 +36,20 @@ export class CreatorsService {
     }
 
     // publicName を決定
-    const publicName = dto.publicName ?? dto.displayName ?? user.email?.split('@')[0];
+    const publicName =
+      dto.publicName ??
+      dto.displayName ??
+      user.email?.split('@')[0];
+
     if (!publicName) {
-      throw new BadRequestException('publicName または displayName を指定してください');
+      throw new BadRequestException(
+        'publicName または displayName を指定してください',
+      );
     }
 
-    // ★ここを upsert にする：あれば更新、なければ作成
+    // Creator があれば更新、なければ新規作成
     const creator = await this.prisma.creator.upsert({
-      where: { userId },              // PK = userId
+      where: { userId }, // PK = userId
       update: {
         publicName,
         bankAccount: dto.bankAccount ?? undefined,
@@ -55,7 +61,7 @@ export class CreatorsService {
       },
     });
 
-    // ユーザーの role を creator に
+    // ユーザーの role を creator に（ここだけで十分）
     if (user.role !== Role.creator) {
       await this.prisma.user.update({
         where: { id: userId },
@@ -150,6 +156,7 @@ export class CreatorsService {
     const creator = await this.prisma.creator.findUnique({
       where: { userId },
     });
+    console.log('getMe userId =', userId, 'creator =', creator);
     if (!creator) {
       // ★ 未登録なら 404 を返す
       throw new NotFoundException('creator not found');

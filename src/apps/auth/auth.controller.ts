@@ -13,7 +13,6 @@ import { type Response, type Request } from 'express';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { SignupDto } from './dto/signup.dto';
-import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('auth')

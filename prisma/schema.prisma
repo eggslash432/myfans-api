@@ -1,19 +1,18 @@
-/**
- * prisma/schema.prisma
- */
+///
+/// prisma/schema.prisma
+///
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "postgresql"  // ここは現状のDBに合わせる（mysql/sqliteなど）
   url      = env("DATABASE_URL")
 }
 
-/**
- * ===== Enums =====
- */
+// ===== Enums =====
+
 enum Role {
   fan
   creator
@@ -86,9 +85,8 @@ enum BillingInterval {
   year
 }
 
-/**
- * ===== Core Users =====
- */
+// ===== Core Users =====
+
 model User {
   id              String    @id @default(uuid())
   email           String    @unique
@@ -122,9 +120,7 @@ model Profile {
   updatedAt   DateTime @updatedAt
 }
 
-/**
- * ===== Creator & KYC =====
- */
+// ===== Creator & KYC =====
 model Creator {
   userId                  String   @id
   user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -167,9 +163,8 @@ model KycSubmission {
   @@index([status, createdAt])
 }
 
-/**
- * ===== Plans & Subscriptions =====
- */
+// ===== Plans & Subscriptions =====
+
 model Plan {
   id              String          @id @default(uuid())
   creator         Creator         @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
@@ -222,9 +217,8 @@ model Subscription {
   @@index([currentPeriodEnd])
 }
 
-/**
- * ===== Posts =====
- */
+// ===== Posts =====
+
 model Post {
   id              String          @id @default(uuid())
   creatorId       String
@@ -273,9 +267,8 @@ model PostAccess {
   @@unique([userId, postId])
 }
 
-/**
- * ===== Social =====
- */
+// ===== Social =====
+
 model Favorite {
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId        String
@@ -287,9 +280,9 @@ model Favorite {
   @@id([userId, creatorId])
 }
 
-/**
- * ===== Payments & Operational =====
- */
+
+// ===== Payments & Operational =====
+
 model Payment {
   id            String        @id @default(uuid())
   user          User?         @relation(fields: [userId], references: [id])
