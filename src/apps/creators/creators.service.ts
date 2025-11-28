@@ -47,6 +47,9 @@ export class CreatorsService {
       );
     }
 
+    console.log("applyCreator user=", userId);
+    console.log("dto=", dto);    
+
     // Creator があれば更新、なければ新規作成
     const creator = await this.prisma.creator.upsert({
       where: { userId }, // PK = userId
@@ -60,6 +63,8 @@ export class CreatorsService {
         bankAccount: dto.bankAccount ?? undefined,
       },
     });
+
+    console.log("creator created/updated =", creator);
 
     // ユーザーの role を creator に（ここだけで十分）
     if (user.role !== Role.creator) {
@@ -151,18 +156,39 @@ export class CreatorsService {
     return link.url;
   }  
 
-  // クリエイター情報 + KYCステータス取得
-  async getMe(userId: string) {
-    const creator = await this.prisma.creator.findUnique({
-      where: { userId },
-    });
-    console.log('getMe userId =', userId, 'creator =', creator);
+  // クリエイター情報 + KYCステータス取得（本人用）
+  async getMe(userIdRaw: string) {
+    const userId = String(userIdRaw);
+
+    // まず Creator があるかチェック
+    let creator = await this.prisma.creator.findUnique({ where: { userId } });
+
     if (!creator) {
-      // ★ 未登録なら 404 を返す
-      throw new NotFoundException('creator not found');
+      // まだ Creator 行が無ければ自動で作る（publicName は email の @ 前 を使用）
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+      if (!user) {
+        throw new NotFoundException('user not found: ' + userId);
+      }
+
+      const publicName =
+        user.email?.split('@')[0] ??
+        'creator';
+
+      creator = await this.prisma.creator.create({
+        data: {
+          userId,
+          publicName,
+        },
+      });
     }
-    return creator;
+
+    // 一覧や公開プロフィールとフォーマットを揃えたいので、
+    // 既存の getCreator() を使って拡張版のレスポンスを返す
+    return this.getCreator(userId);
   }
+
 
   // KYC開始用（アカウントを作ってリンク返す）
   async startKyc(userId: string) {

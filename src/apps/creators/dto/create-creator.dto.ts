@@ -1,3 +1,4 @@
+// api/src/apps/creators/dto/create-creator.dto.ts
 import { AgeRating, PublishedStatus, Visibility } from '@prisma/client';
 import { IsString, IsOptional, IsObject } from 'class-validator';
 

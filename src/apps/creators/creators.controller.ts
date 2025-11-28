@@ -1,3 +1,5 @@
+// api/src/apps/creators/creators.controller.ts
+
 import {
   Controller, Get, Post, Body, UseGuards, Request, Param, NotFoundException,
   ForbiddenException, UnauthorizedException, BadRequestException, Req,
@@ -19,8 +21,9 @@ export class CreatorsController {
   // 申請
   @UseGuards(JwtAuthGuard)
   @Post()
-  async applyAsCreator(@Request() req, @Body() dto: CreateCreatorDto) {
-    return this.creatorsService.applyCreator(req.user.sub, dto);
+  async applyCreator(@Req() req: any, @Body() dto: CreateCreatorDto) {
+    const userId = req.user.sub;
+    return this.creatorsService.applyCreator(userId, dto);
   }
 
   // 一覧: GET /creators
@@ -181,13 +184,6 @@ export class CreatorsController {
     const sessionUrl = await this.creatorsService.createSubscriptionCheckout(creatorId, planId);
     return { url: sessionUrl };
   }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('apply')
-  async apply(@Req() req: any, @Body() body: any) {
-    const userId = req.user.sub as string;
-    return this.creatorsService.applyCreator(userId, body);
-  }  
 
   // クリエイター本人用の情報取得
   @UseGuards(JwtAuthGuard)
