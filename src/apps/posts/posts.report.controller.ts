@@ -10,11 +10,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreateReportDto } from './dto/create-report.dto';
-
-type UserJwt = {
-  sub: string; // userId
-  role: 'fan' | 'creator' | 'admin';
-};
+import { UserJwt } from 'src/shared/types';
 
 @Controller('posts')
 export class PostsReportController {
@@ -43,7 +39,7 @@ export class PostsReportController {
 
     // 既に同じユーザーが同じ投稿を通報していたら、二重通報防止のため status を pending に戻す
     const existing = await this.prisma.report.findFirst({
-      where: { postId, userId: user.sub },
+      where: { postId, userId: user.id },
     });
 
     if (existing) {
@@ -59,7 +55,7 @@ export class PostsReportController {
     return this.prisma.report.create({
       data: {
         postId,
-        userId: user.sub,
+        userId: user.id,
         reason: dto.reason,
       },
     });

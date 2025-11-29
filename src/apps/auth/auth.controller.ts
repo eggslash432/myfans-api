@@ -64,7 +64,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async me(@Req() req: any) {
     const user = await this.prisma.user.findUnique({
-      where: { id: String(req.user.sub) },
+      where: { id: String((req.user as any).id) },
       select: { id: true, email: true, role: true },
     });
     if (!user) throw new UnauthorizedException();

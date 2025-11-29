@@ -24,7 +24,7 @@ export class CreatorPayoutsController {
   // 残高取得
   @Get('balance')
   async getBalance(@Req() req: any) {
-    const creatorId = req.user.sub as string;
+    const creatorId = req.user.id as string;
     
     // ★ KYC チェック（出金のとき重要）
     const creator = await this.prisma.creator.findUnique({
@@ -52,7 +52,7 @@ export class CreatorPayoutsController {
   // 自分の Payout 一覧
   @Get()
   async listMine(@Req() req: any) {
-    const creatorId = req.user.sub as string;
+    const creatorId = req.user.id as string;
 
     // ★ KYC チェック（一覧も禁止する）
     const creator = await this.prisma.creator.findUnique({
@@ -80,7 +80,7 @@ export class CreatorPayoutsController {
   // 出金リクエスト
   @Post('request')
   async request(@Req() req: any, @Body() body: { amountJpy: number }) {
-    const creatorId = req.user.sub as string;
+    const creatorId = req.user.id as string;
     const amount = Number(body.amountJpy);
 
     // ★ KYC チェック（ここが最重要）

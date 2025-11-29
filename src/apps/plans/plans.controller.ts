@@ -32,7 +32,7 @@ export class PlansController {
 
     // ★ KYC チェック追加
     const creator = await this.prisma.creator.findUnique({
-      where: { userId: user.sub },
+      where: { userId: user.id },
       select: { stripeKycStatus: true },
     });
 
@@ -92,13 +92,13 @@ export class PlansController {
   @UseGuards(JwtAuthGuard)
   @Get()
   async list(@Req() req) {
-    const userId = req.user.sub;
+    const userId = req.user.id;
     return this.plans.findByCreator(userId);
   }
 
   @Get()
   async myPlans(@Req() req: any) {
-    const creatorId = await this.creatorHelper.getMyCreatorId(req.user.sub);
+    const creatorId = await this.creatorHelper.getMyCreatorId(req.user.id);
     return this.prisma.plan.findMany({
       where: { creatorId },
       orderBy: { createdAt: 'desc' },

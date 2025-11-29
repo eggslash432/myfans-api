@@ -1,4 +1,4 @@
-// myfans-api/src/apps/creators/creators.service.ts
+// api/src/apps/creators/creators.service.ts
 
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -33,7 +33,7 @@ export class CreatorsService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new BadRequestException('user not found: ' + userId);
-    }
+    }  
 
     // publicName を決定
     const publicName =
@@ -66,8 +66,8 @@ export class CreatorsService {
 
     console.log("creator created/updated =", creator);
 
-    // ユーザーの role を creator に（ここだけで十分）
-    if (user.role !== Role.creator) {
+    // 一般ユーザーだけ role を creator に昇格させる
+    if (user.role === Role.fan) {
       await this.prisma.user.update({
         where: { id: userId },
         data: { role: Role.creator },
@@ -159,6 +159,11 @@ export class CreatorsService {
   // クリエイター情報 + KYCステータス取得（本人用）
   async getMe(userIdRaw: string) {
     const userId = String(userIdRaw);
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('user not found: ' + userId);
+    }       
 
     // まず Creator があるかチェック
     let creator = await this.prisma.creator.findUnique({ where: { userId } });

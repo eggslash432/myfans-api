@@ -13,8 +13,8 @@ export class PostsFetchController {
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   async getPost(@Param('id') id: string, @Req() req: any) {
-    const user = req.user as { sub: string } | undefined;
-    const userId = user?.sub ?? null;
+    const user = req.user;
+    const userId = user?.id ;
 
     const { post } = await this.accessHelper.assertCanViewPost(userId, id);
 

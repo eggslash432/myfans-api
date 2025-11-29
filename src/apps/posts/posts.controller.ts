@@ -15,12 +15,7 @@ import {
 import { PostsService } from './posts.service';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-
-type UserJwt = {
-  sub: string;              // userId
-  role: 'fan' | 'creator' | 'admin';
-  email?: string;
-};
+import { UserJwt } from 'src/shared/types';
 
 @Controller('posts')
 export class PostsController {
@@ -45,11 +40,11 @@ export class PostsController {
   @Get('me')
   async myPosts(@Req() req: any) {
     const user = req.user as UserJwt | undefined;
-    if (!user?.sub) {
+    if (!user?.id) {
       throw new ForbiddenException('ログインが必要です');
     }
 
-    const posts = await this.posts.getMyPosts(user.sub);
+    const posts = await this.posts.getMyPosts(user.id);
     return { items: posts };
   }
 
@@ -63,7 +58,7 @@ export class PostsController {
   @Get(':id')
   async getPost(@Param('id') id: string, @Req() req: any) {
     const user = req.user as UserJwt | undefined;
-    const viewerId = user?.sub ?? null;
+    const viewerId = user?.id ?? null;
 
     const detail = await this.posts.getPostDetail(id, viewerId);
     if (!detail) {
@@ -84,12 +79,12 @@ export class PostsController {
     @Req() req: any,
   ) {
     const user = req.user as UserJwt | undefined;
-    if (!user?.sub) {
+    if (!user?.id) {
       throw new ForbiddenException('ログインが必要です');
     }
 
     const reason = body.reason ?? '';
-    const result = await this.posts.reportPost(user.sub, id, reason);
+    const result = await this.posts.reportPost(user.id, id, reason);
 
     return result;
   }

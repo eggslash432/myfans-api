@@ -1,3 +1,5 @@
+//api/src/apps/auth/jwt.strategy.ts
+
 import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -21,12 +23,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
   ) {
     console.log('JWT payload in validate:', payload);
-    // payload をそのまま req.user に載せる
+
+    // sub を id にマッピングして req.user に載せる
     return { 
-      sub: payload.sub, 
-      email: payload.email, 
+      id: payload.sub,
+      email: payload.email,
       role: payload.role,
-      creatorId: payload.creatorId,   // ★追加 
+      creatorId: payload.creatorId,
     };
   }
 }

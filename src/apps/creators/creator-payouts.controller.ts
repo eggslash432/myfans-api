@@ -13,12 +13,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatorHelper } from '../helpers/creator.helper';
 import { PayoutStatus } from '@prisma/client';
-
-type UserJwt = {
-  sub: string;
-  role: 'fan' | 'creator' | 'admin';
-  email?: string;
-};
+import { UserJwt } from 'src/shared/types';
 
 @Controller('creators/me/payouts')
 @UseGuards(JwtAuthGuard)
@@ -37,7 +32,7 @@ export class CreatorPayoutsController {
   @Get('balance')
   async getBalance(@Req() req: any) {
     const user = req.user as UserJwt | undefined;
-    const userId = user?.sub ?? (req.user?.id as string | undefined);
+    const userId = user?.id ;
     if (!userId) throw new BadRequestException('Unauthenticated');
 
     // クリエイターID（＝userId）を取得＆creator 以外は弾く
@@ -86,7 +81,7 @@ export class CreatorPayoutsController {
   @Get()
   async listPayouts(@Req() req: any) {
     const user = req.user as UserJwt | undefined;
-    const userId = user?.sub ?? (req.user?.id as string | undefined);
+    const userId = user?.id ;
     if (!userId) throw new BadRequestException('Unauthenticated');
 
     const creatorId = await this.creatorHelper.getMyCreatorId(userId);
@@ -115,7 +110,7 @@ export class CreatorPayoutsController {
     },
   ) {
     const user = req.user as UserJwt | undefined;
-    const userId = user?.sub ?? (req.user?.id as string | undefined);
+    const userId = user?.id ;
     if (!userId) throw new BadRequestException('Unauthenticated');
 
     const creatorId = await this.creatorHelper.getMyCreatorId(userId);

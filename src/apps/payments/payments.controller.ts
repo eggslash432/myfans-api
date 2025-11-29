@@ -12,12 +12,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PaymentsService } from './payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCheckoutValidatedDto } from './dto/create-checkout.dto';
-
-type UserJwt = {
-  sub: string; // userId
-  email?: string;
-  role: 'fan' | 'creator' | 'admin';
-};
+import { UserJwt } from 'src/shared/types';
 
 @Controller('payments')
 export class PaymentsController {
@@ -38,9 +33,9 @@ export class PaymentsController {
     @Req() req: any,
   ) {
     const user = req.user as UserJwt | undefined;
-    if (!user?.sub) throw new BadRequestException('Unauthenticated');
+    if (!user?.id) throw new BadRequestException('Unauthenticated');
 
-    const userId = user.sub;
+    const userId = user.id;
 
     // ============================================
     // ① サブスク（planId）

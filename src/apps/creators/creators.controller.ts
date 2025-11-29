@@ -9,7 +9,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreatorsService } from './creators.service';
 import { CreateCreatorDto } from './dto/create-creator.dto';
 import { CreatePostDto } from '../posts/dto/create-post.dto';
-import { PublishedStatus } from '@prisma/client';
+import { PublishedStatus, Role } from '@prisma/client';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
 @Controller('creators')
 export class CreatorsController {
@@ -22,7 +24,7 @@ export class CreatorsController {
   @UseGuards(JwtAuthGuard)
   @Post()
   async applyCreator(@Req() req: any, @Body() dto: CreateCreatorDto) {
-    const userId = req.user.sub;
+    const userId = req.user.id;
     return this.creatorsService.applyCreator(userId, dto);
   }
 
@@ -120,11 +122,13 @@ export class CreatorsController {
   @UseGuards(JwtAuthGuard)
   @Post('me/posts')
   async createMyPost(@Request() req, @Body() dto: CreatePostDto) {
-    const userId: string | undefined = req.user?.sub;
-    const role: string | undefined = req.user?.role;
+    const userId: string | undefined = req.user?.id;
+    const role: Role | undefined = req.user?.role;
 
     if (!userId) throw new UnauthorizedException('JWTが無効です');
-    if (role !== 'creator') throw new ForbiddenException('クリエイターのみ投稿可能です');
+    if (role !== Role.creator && role !== Role.admin) {
+      throw new ForbiddenException('クリエイターのみ投稿可能です');
+    }
 
     const creator = await this.prisma.creator.findUnique({ where: { userId } });
     if (!creator) throw new ForbiddenException('クリエイター登録が必要です');
@@ -186,10 +190,12 @@ export class CreatorsController {
   }
 
   // クリエイター本人用の情報取得
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  // admin も自分の Creator 情報を取れるようにする
+  @Roles(Role.fan, Role.creator, Role.admin)
   @Get('me')
-  async getMe(@Req() req: any) {
-    const userId = req.user.sub as string;
+  getMe(@Req() req) {
+    const userId = req.user.id;
     return this.creatorsService.getMe(userId);
   }
 
@@ -197,7 +203,7 @@ export class CreatorsController {
   @UseGuards(JwtAuthGuard)
   @Post('me/kyc/start')
   async startKyc(@Req() req: any) {
-    const userId = req.user.sub as string;
+    const userId = req.user.id as string;
     return this.creatorsService.startKyc(userId);
   }  
 }

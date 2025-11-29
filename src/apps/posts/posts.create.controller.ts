@@ -6,6 +6,7 @@ import {
   UseGuards,
   Req,
   ForbiddenException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -46,12 +47,12 @@ export class PostsCreateController {
    */
   private async createImpl(dto: CreatePostDto, req: any) {
     const user = req.user as UserJwt | undefined;
-    if (!user?.sub) {
-      throw new ForbiddenException('ログインが必要です');
+    if (!user?.id) {
+      throw new UnauthorizedException('ログインが必要です');
     }
 
     // 自分が Creator か確認して creatorId を取得
-    const creatorId = await this.creatorHelper.getMyCreatorId(user.sub);
+    const creatorId = await this.creatorHelper.getMyCreatorId(user.id);
 
     // 受け取り値を正規化（boolean / string 両対応）
     const toPublishedStatus = (v: unknown): PublishedStatus => {

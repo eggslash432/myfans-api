@@ -18,12 +18,7 @@ import { S3Service } from '../s3/s3.service'; // パスは実プロジェクト�
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-
-type UserJwt = {
-  sub: string;
-  role: 'fan' | 'creator' | 'admin';
-  email?: string;
-};
+import { UserJwt } from 'src/shared/types';
 
 @Controller()
 export class PostsMediaController {
@@ -60,7 +55,7 @@ export class PostsMediaController {
       select: { id: true, creatorId: true },
     });
     if (!post) throw new BadRequestException('指定の投稿は存在しません');
-    if (post.creatorId !== user.sub) {
+    if (post.creatorId !== user.id) {
       throw new ForbiddenException('自分の投稿にのみアップロードできます');
     }
 

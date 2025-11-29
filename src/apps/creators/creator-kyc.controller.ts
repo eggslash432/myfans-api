@@ -12,12 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreatorHelper } from '../helpers/creator.helper';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
-
-type UserJwt = {
-  sub: string;
-  email?: string;
-  role: 'fan' | 'creator' | 'admin';
-};
+import { UserJwt } from 'src/shared/types';
 
 @Controller('creators/me/kyc')
 @UseGuards(JwtAuthGuard)
@@ -57,7 +52,7 @@ export class CreatorKycController {
   @Post('start')
   async startKyc(@Req() req: any) {
     const user = req.user as UserJwt | undefined;
-    const userId = user?.sub ?? (req.user?.id as string | undefined);
+    const userId = user?.id ;
     if (!userId) throw new BadRequestException('Unauthenticated');
 
     // Creator であることを確認（そうでなければ Forbidden）
