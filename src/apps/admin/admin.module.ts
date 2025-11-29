@@ -3,6 +3,7 @@ import { AdminCreatorsController } from './admin-creators.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminPostsController } from './admin.posts.controller';
 import { AdminReportsController } from './admin-reports.controller';
+import { AdminSummaryController } from './admin-summary.controller';
 
 @Module({
   controllers: [
@@ -10,6 +11,7 @@ import { AdminReportsController } from './admin-reports.controller';
     AdminCreatorsController, 
     AdminPostsController,
     AdminReportsController,
+    AdminSummaryController,
   ],
   providers: [PrismaService],
 })
