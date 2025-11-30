@@ -54,6 +54,19 @@ export class CreatorsController {
     return { items };
   }
 
+  // クリエイター本人用の情報取得
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  // admin も自分の Creator 情報を取れるようにする
+  @Roles(Role.fan, Role.creator, Role.admin)
+  @Get('me')
+  getMe(@Req() req) {
+    const userId = req.user.id;
+    if (!userId) {
+      throw new UnauthorizedException('JWTが無効です');
+    }    
+    return this.creatorsService.getMe(userId);
+  }  
+
   // 詳細: GET /creators/:id
   @Get(':id')
   async detail(@Param('id') id: string) {
@@ -74,7 +87,7 @@ export class CreatorsController {
       },
     });
 
-    if (!c) throw new NotFoundException('creator not found');
+    if (!c) throw new NotFoundException('クリエイターが見つかりません');
 
     return {
       id: c.userId,
@@ -187,16 +200,6 @@ export class CreatorsController {
   ) {
     const sessionUrl = await this.creatorsService.createSubscriptionCheckout(creatorId, planId);
     return { url: sessionUrl };
-  }
-
-  // クリエイター本人用の情報取得
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  // admin も自分の Creator 情報を取れるようにする
-  @Roles(Role.fan, Role.creator, Role.admin)
-  @Get('me')
-  getMe(@Req() req) {
-    const userId = req.user.id;
-    return this.creatorsService.getMe(userId);
   }
 
   // 本人確認を開始（StripeのKYC画面URLを返す）
