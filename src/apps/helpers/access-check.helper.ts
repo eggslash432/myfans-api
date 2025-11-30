@@ -1,4 +1,4 @@
-// src/apps/helpers/access-check.helper.ts
+// api/src/apps/helpers/access-check.helper.ts
 
 import {
   ForbiddenException,
@@ -10,6 +10,7 @@ import {
   PublishedStatus,
   Visibility,
   SubStatus,
+  Role,
 } from '@prisma/client';
 
 @Injectable()
@@ -18,16 +19,9 @@ export class AccessCheckHelper {
 
   /**
    * 投稿閲覧権限チェック
-   *
-   * - free          : 誰でも閲覧可
-   * - plan          : 対象プランにアクティブ購読があるユーザーのみ閲覧可
-   * - paid_single   : PPV購入(PostAccessあり)ユーザーのみ閲覧可
-   *
-   * - 投稿者本人は下書き/非公開含めて常に閲覧可
-   * - 上記を満たさない場合は ForbiddenException を投げる
    */
   async assertCanViewPost(
-    userId: string | null,
+    user: { id: string; role: Role } | string | null,   // ★ ここを変更
     postId: string,
   ): Promise<{ post: any; canView: boolean }> {
     const now = new Date();
@@ -45,7 +39,18 @@ export class AccessCheckHelper {
       throw new NotFoundException('投稿が見つかりません');
     }
 
-    // 投稿者本人はステータス/公開範囲に関係なく閲覧可
+    // ★ 引数を共通フォーマットに正規化
+    const userId =
+      typeof user === 'string' ? user : user?.id ?? null;
+    const userRole =
+      typeof user === 'string' ? null : user?.role ?? null;
+
+    // ★ 管理者はすべての投稿を閲覧可能（下書き／有料問わず）
+    if (userRole === Role.admin) {
+      return { post, canView: true };
+    }
+
+    // 投稿者本人はステータス/公開範囲に関係なく閲覧可（クリエイター）
     if (userId && post.creatorId === userId) {
       return { post, canView: true };
     }
@@ -67,8 +72,7 @@ export class AccessCheckHelper {
 
     // ------ プラン購読者向け投稿 (plan) ------
     if (post.visibility === Visibility.plan) {
-      if (!post.planId) {
-        // 設計上ありえないが保険
+      if (!post.planId || !post.creatorId) {
         throw new ForbiddenException('この投稿を閲覧する権限がありません');
       }
 
@@ -108,7 +112,6 @@ export class AccessCheckHelper {
       return { post, canView: true };
     }
 
-    // ここまででマッチしなければ閲覧不可
     throw new ForbiddenException('この投稿を閲覧する権限がありません');
   }
 }

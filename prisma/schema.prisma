@@ -221,8 +221,8 @@ model Subscription {
 
 model Post {
   id              String          @id @default(uuid())
-  creatorId       String
-  creator         Creator         @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
+  creatorId       String?
+  creator         Creator?         @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
   title           String
   body            String?
   visibility      Visibility

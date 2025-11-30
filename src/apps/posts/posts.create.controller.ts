@@ -1,4 +1,4 @@
-// src/apps/posts/posts.create.controller.ts
+// api/src/apps/posts/posts.create.controller.ts
 import {
   Controller,
   Post,
@@ -11,7 +11,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
-import { PublishedStatus, Visibility } from '@prisma/client';
+import { PublishedStatus, Role, Visibility } from '@prisma/client';
 import { UserJwt } from 'src/shared/types';
 import { CreatorHelper } from '../helpers/creator.helper';
 
@@ -51,10 +51,40 @@ export class PostsCreateController {
       throw new UnauthorizedException('ログインが必要です');
     }
 
-    // 自分が Creator か確認して creatorId を取得
-    const creatorId = await this.creatorHelper.getMyCreatorId(user.id);
+    // 権限チェック
+    if (user.role !== Role.creator && user.role !== Role.admin) {
+      throw new ForbiddenException('投稿権限がありません');
+    }
 
-    // 受け取り値を正規化（boolean / string 両対応）
+    // ★ creator の場合だけ Creator を紐付け
+    let creatorId: string | null = null;
+    if (user.role === Role.creator) {
+      creatorId = await this.creatorHelper.getMyCreatorId(user.id);
+    }
+
+    // ---------------------------------------------
+    // 🔥 admin のときは「無料投稿」へ強制
+    // ---------------------------------------------
+    const visibility: Visibility =
+      user.role === Role.admin ? Visibility.free : dto.visibility;
+
+    const planId: string | null =
+      user.role === Role.admin
+        ? null
+        : dto.visibility === Visibility.plan
+        ? dto.planId ?? null
+        : null;
+
+    const priceJpy: number | null =
+      user.role === Role.admin
+        ? null
+        : dto.visibility === Visibility.paid_single
+        ? dto.priceJpy ?? null
+        : null;
+
+    // ---------------------------------------------
+
+    // 公開ステータス（draft / published）
     const toPublishedStatus = (v: unknown): PublishedStatus => {
       if (typeof v === 'boolean') {
         return v ? PublishedStatus.published : PublishedStatus.draft;
@@ -68,29 +98,28 @@ export class PostsCreateController {
       return PublishedStatus.draft;
     };
 
-    // DTO 側の publishedStatus / status どちらでも受ける
     const pub = toPublishedStatus(
       (dto as any).publishedStatus ?? (dto as any).status,
     );
     const pubAt = pub === PublishedStatus.published ? new Date() : null;
 
-    // visibility と price / planId を整合させる
-    const planId =
-      dto.visibility === Visibility.plan ? dto.planId ?? null : null;
-    const priceJpy =
-      dto.visibility === Visibility.paid_single ? dto.priceJpy ?? null : null;
-
     const post = await this.prisma.post.create({
       data: {
         title: dto.title,
         body: dto.body,
-        visibility: dto.visibility,
         ageRating: dto.ageRating,
-        publishedStatus: pub,
-        publishedAt: pubAt,
-        creatorId,
+
+        // ★ dto ではなくローカル変数を使う（admin 上書き済み）
+        visibility,
         planId,
         priceJpy,
+
+        // Creator
+        creatorId,
+
+        // 公開状態
+        publishedStatus: pub,
+        publishedAt: pubAt,
       },
       select: {
         id: true,
@@ -107,4 +136,5 @@ export class PostsCreateController {
 
     return { ok: true, post };
   }
+
 }
