@@ -7,9 +7,11 @@ import { KycStatus, Role } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {});
+
 @Injectable()
 export class CreatorsService {
-  private stripe: Stripe;
+  private readonly stripe: Stripe;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -163,20 +165,13 @@ export class CreatorsService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('user not found: ' + userId);
-    }       
+    }
 
     // まず Creator があるかチェック
     let creator = await this.prisma.creator.findUnique({ where: { userId } });
 
     if (!creator) {
       // まだ Creator 行が無ければ自動で作る（publicName は email の @ 前 を使用）
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-      });
-      if (!user) {
-        throw new NotFoundException('user not found: ' + userId);
-      }
-
       const publicName =
         user.email?.split('@')[0] ??
         'creator';
@@ -189,9 +184,84 @@ export class CreatorsService {
       });
     }
 
-    // 一覧や公開プロフィールとフォーマットを揃えたいので、
-    // 既存の getCreator() を使って拡張版のレスポンスを返す
-    return this.getCreator(userId);
+    // ---- DB の既存値を初期値にする ----
+    let stripeKycStatus = creator.stripeKycStatus ?? 'pending';
+    let stripeChargesEnabled = creator.stripeChargesEnabled ?? false;
+    let stripePayoutsEnabled = creator.stripePayoutsEnabled ?? false;
+    let stripeKycDisabledReason = creator.stripeKycDisabledReason ?? null;
+
+    // DB は String? なので、画面用にパースして配列にしておく
+    let stripeKycFieldsDue: string[] =
+      creator.stripeKycFieldsDue ? creator.stripeKycFieldsDue.split(',') : [];
+    let stripeKycErrors: any[] =
+      creator.stripeKycErrors ? JSON.parse(creator.stripeKycErrors) : [];
+
+    // ---- Stripe アカウントIDがあるなら、最新状態を Stripe から取得 ----
+    if (creator.stripeAccountId) {
+      // ★ this.stripe を使う
+      const account = await this.stripe.accounts.retrieve(
+        creator.stripeAccountId,
+      );
+
+      // 型付きで requirements を取り出す
+      const req = account.requirements; // Stripe.Account.Requirements | null | undefined
+
+      const fieldsDueArray = [
+        ...(req?.currently_due ?? []),
+        ...(req?.past_due ?? []),
+      ];
+
+      const errorsArray = req?.errors ?? [];
+
+      // ステータス判定
+      if (req?.disabled_reason) {
+        stripeKycStatus = KycStatus.rejected;
+        stripeKycDisabledReason = req.disabled_reason;
+      } else if (fieldsDueArray.length === 0) {
+        stripeKycStatus = KycStatus.approved;
+        stripeKycDisabledReason = null;
+      } else {
+        stripeKycStatus = KycStatus.pending;
+        stripeKycDisabledReason = null;
+      }
+
+      // ← ここを「必ず boolean」にする
+      stripeChargesEnabled = !!account.charges_enabled;
+      stripePayoutsEnabled = !!account.payouts_enabled;
+
+      // 画面用
+      stripeKycFieldsDue = fieldsDueArray;
+      stripeKycErrors = errorsArray;
+
+      // ★ Prisma には String? で保存する
+      await this.prisma.creator.update({
+        where: { userId },
+        data: {
+          stripeKycStatus,
+          stripeChargesEnabled,
+          stripePayoutsEnabled,
+          stripeKycDisabledReason,
+          stripeKycFieldsDue:
+            fieldsDueArray.length > 0 ? fieldsDueArray.join(',') : null,
+          stripeKycErrors:
+            errorsArray.length > 0 ? JSON.stringify(errorsArray) : null,
+        },
+      });
+    }
+
+    // ---- フロントに返すデータ ----
+    return {
+      isCreator: true,
+      publicName: creator.publicName,
+      stripeAccountId: creator.stripeAccountId,
+      stripeKycStatus,
+      stripeChargesEnabled,
+      stripePayoutsEnabled,
+      stripeKycDisabledReason,
+      // ここは配列のまま返す（画面で使いやすいように）
+      stripeKycFieldsDue,
+      stripeKycErrors,
+    };
   }
 
 

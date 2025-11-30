@@ -51,70 +51,68 @@ export class CreatorKycController {
    */
   @Post('start')
   async startKyc(@Req() req: any) {
-    const user = req.user as UserJwt | undefined;
-    const userId = user?.id ;
-    if (!userId) throw new BadRequestException('Unauthenticated');
+    try {
+      const user = req.user as UserJwt | undefined;
+      const userId = user?.id;
+      if (!userId) throw new BadRequestException('Unauthenticated');
 
-    // Creator であることを確認（そうでなければ Forbidden）
-    const creatorId = await this.creatorHelper.getMyCreatorId(userId);
+      const creatorId = await this.creatorHelper.getMyCreatorId(userId);
 
-    // Creator レコード取得（Stripe関連フィールドも見る）
-    const creator = await this.prisma.creator.findUnique({
-      where: { userId: creatorId },
-      select: {
-        userId: true,
-        publicName: true,
-        stripeAccountId: true,
-      },
-    });
-    if (!creator) {
-      // settings.tsx が "creator not found" を特別扱いしているので合わせる
-      throw new BadRequestException('creator not found');
-    }
-
-    // 既存の Stripe Connect Account を使うか、なければ作成
-    let accountId = creator.stripeAccountId;
-    if (!accountId) {
-      const acct = await this.stripe.accounts.create({
-        // Express アカウント前提（必要に応じて custom に変更）
-        type: 'express',
-        country: 'JP',
-        email: user?.email,
-        business_type: 'individual',
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
-        },
-        metadata: {
-          userId,
-          creatorId,
-        },
-      });
-
-      accountId = acct.id;
-
-      await this.prisma.creator.update({
+      const creator = await this.prisma.creator.findUnique({
         where: { userId: creatorId },
-        data: {
-          stripeAccountId: accountId,
-          // KYC 開始時点では pending 扱い
-          stripeKycStatus: 'pending',
+        select: {
+          userId: true,
+          publicName: true,
+          stripeAccountId: true,
         },
       });
+      if (!creator) {
+        throw new BadRequestException('creator not found');
+      }
+
+      let accountId = creator.stripeAccountId;
+      if (!accountId) {
+        const acct = await this.stripe.accounts.create({
+          type: 'express',
+          country: 'JP',
+          email: user?.email,
+          business_type: 'individual',
+          capabilities: {
+            card_payments: { requested: true },
+            transfers: { requested: true },
+          },
+          metadata: { userId, creatorId },
+        });
+
+        accountId = acct.id;
+
+        await this.prisma.creator.update({
+          where: { userId: creatorId },
+          data: {
+            stripeAccountId: accountId,
+            stripeKycStatus: 'pending',
+          },
+        });
+      }
+
+      const refreshUrl = `${this.appOrigin}/creator/settings?kyc=refresh`;
+      const returnUrl = `${this.appOrigin}/creator/settings?kyc=return`;
+
+      const link = await this.stripe.accountLinks.create({
+        account: accountId,
+        refresh_url: refreshUrl,
+        return_url: returnUrl,
+        type: 'account_onboarding',
+      });
+
+      return { url: link.url };
+    } catch (err: any) {
+      console.error('Stripe KYC error:', err, err?.raw);
+      const msg =
+        err?.raw?.message ??
+        err?.message ??
+        'Stripe KYC start failed';
+      throw new BadRequestException(msg);
     }
-
-    // 本人確認画面のURL（Stripe Connect Onboarding）を作成
-    const refreshUrl = `${this.appOrigin}/creator/settings?kyc=refresh`;
-    const returnUrl = `${this.appOrigin}/creator/settings?kyc=return`;
-
-    const link = await this.stripe.accountLinks.create({
-      account: accountId,
-      refresh_url: refreshUrl,
-      return_url: returnUrl,
-      type: 'account_onboarding',
-    });
-
-    // フロントからは { url } を受けて location.href で遷移させる
-    return { url: link.url };
   }
 }

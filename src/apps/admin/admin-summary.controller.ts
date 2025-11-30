@@ -1,4 +1,4 @@
-// src/apps/admin/admin-summary.controller.ts
+// api/src/apps/admin/admin-summary.controller.ts
 
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
