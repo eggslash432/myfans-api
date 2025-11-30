@@ -6,6 +6,7 @@ import { CreateCreatorDto } from './dto/create-creator.dto';
 import { KycStatus, Role } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
+import { UpdateCreatorProfileDto } from './dto/update-creator-profile.dto';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {});
 
@@ -63,6 +64,7 @@ export class CreatorsService {
         userId,
         publicName,
         bankAccount: dto.bankAccount ?? undefined,
+        isListed: false, 
       },
     });
 
@@ -180,6 +182,7 @@ export class CreatorsService {
         data: {
           userId,
           publicName,
+          isListed: false,
         },
       });
     }
@@ -264,6 +267,44 @@ export class CreatorsService {
     };
   }
 
+  // ★ プロフィール更新
+  async updateProfile(userId: string, dto: UpdateCreatorProfileDto) {
+    // Creator が存在するかチェック
+    const creator = await this.prisma.creator.findUnique({ where: { userId } });
+    if (!creator) {
+      throw new NotFoundException('creator not found: ' + userId);
+    }
+
+    // Creator.publicName を更新（指定があれば）
+    if (dto.publicName !== undefined) {
+      await this.prisma.creator.update({
+        where: { userId },
+        data: {
+          publicName: dto.publicName,
+        },
+      });
+    }
+
+    // プロフィール（bio / avatarUrl）は Profile モデル側に保存すると仮定
+    if (dto.bio !== undefined || dto.avatarUrl !== undefined) {
+      await this.prisma.profile.upsert({
+        where: { userId },
+        update: {
+          ...(dto.bio !== undefined ? { bio: dto.bio } : {}),
+          ...(dto.avatarUrl !== undefined ? { avatarUrl: dto.avatarUrl } : {}),
+        },
+        create: {
+          userId,
+          displayName: dto.publicName ?? creator.publicName,
+          bio: dto.bio ?? null,
+          avatarUrl: dto.avatarUrl ?? null,
+        },
+      });
+    }
+
+    // 更新後の情報をそのままフロントに返したいので getMe を再利用
+    return this.getMe(userId);
+  }  
 
   // KYC開始用（アカウントを作ってリンク返す）
   async startKyc(userId: string) {

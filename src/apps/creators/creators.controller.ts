@@ -3,6 +3,7 @@
 import {
   Controller, Get, Post, Body, UseGuards, Request, Param, NotFoundException,
   ForbiddenException, UnauthorizedException, BadRequestException, Req,
+  Patch,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,6 +13,7 @@ import { CreatePostDto } from '../posts/dto/create-post.dto';
 import { PublishedStatus, Role } from '@prisma/client';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { UpdateCreatorProfileDto } from './dto/update-creator-profile.dto';
 
 @Controller('creators')
 export class CreatorsController {
@@ -65,6 +67,21 @@ export class CreatorsController {
       throw new UnauthorizedException('JWTが無効です');
     }    
     return this.creatorsService.getMe(userId);
+  }  
+
+  // ★ プロフィール更新: PATCH /creators/me
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.creator, Role.admin)
+  @Patch('me')
+  async updateMe(
+    @Req() req,
+    @Body() dto: UpdateCreatorProfileDto,
+  ) {
+    const userId = req.user.id;
+    if (!userId) {
+      throw new UnauthorizedException('JWTが無効です');
+    }
+    return this.creatorsService.updateProfile(userId, dto);
   }  
 
   // 詳細: GET /creators/:id

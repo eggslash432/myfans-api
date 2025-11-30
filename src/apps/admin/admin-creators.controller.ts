@@ -1,4 +1,4 @@
-// src/apps/admin/admin-creators.controller.ts
+// api/src/apps/admin/admin-creators.controller.ts
 
 import {
   Body,
@@ -19,7 +19,7 @@ class UpdateListingBody {
 }
 
 @UseGuards(JwtAuthGuard, AdminOnlyGuard)
-@Controller('api/admin/creators')
+@Controller('admin/creators')
 export class AdminCreatorsController {
   constructor(private readonly prisma: PrismaService) {}
 

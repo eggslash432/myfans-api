@@ -1,3 +1,5 @@
+// api/src/apps/admin/admin.module.ts
+
 import { Module } from '@nestjs/common';
 import { AdminCreatorsController } from './admin-creators.controller';
 import { PrismaService } from '../prisma/prisma.service';
