@@ -13,8 +13,10 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminOnlyGuard } from '../access-control/admin-only.guard';
+import { IsBoolean } from 'class-validator';
 
 class UpdateListingBody {
+  @IsBoolean()
   isListed!: boolean;
 }
 
@@ -124,6 +126,7 @@ export class AdminCreatorsController {
    * { "isListed": true }
    */
   @Patch(':userId/listing')
+  @UseGuards(JwtAuthGuard, AdminOnlyGuard)
   async updateListing(
     @Param('userId') userId: string,
     @Body() body: UpdateListingBody,

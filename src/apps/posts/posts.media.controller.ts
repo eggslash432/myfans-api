@@ -1,4 +1,5 @@
-// src/apps/posts/posts.media.controller.ts
+// api/src/apps/posts/posts.media.controller.ts
+
 import {
   BadRequestException,
   Body,
