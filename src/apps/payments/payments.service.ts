@@ -1,4 +1,4 @@
-// myfans-api/src/apps/payments/payments.service.ts
+// api/src/apps/payments/payments.service.ts
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -157,35 +157,30 @@ export class PaymentsService {
   }
 
   /**
-   * プランID→Stripe Price ID を取得
-   * - 現行スキーマの externalPriceId を優先
-   * - 開発中の互換性のために複数カラム名に対応（as any で型をごまかす）
+   * プランID → Stripe Price ID を取得
+   * - 現行スキーマの externalPriceId を使う
    */
   private async getStripePriceId(planId: string): Promise<string> {
-    const plan: any = await this.prisma.plan.findUnique({
+    const plan = await this.prisma.plan.findUnique({
       where: { id: planId },
       select: {
-        externalPriceId: true as any,
-        stripePriceId: true as any,
-        stripe_price_id: true as any,
-        priceId: true as any,
-        price_id: true as any,
-      } as any,
+        externalPriceId: true,
+      },
     });
 
-    const priceId =
-      plan?.externalPriceId ??
-      plan?.stripePriceId ??
-      plan?.stripe_price_id ??
-      plan?.priceId ??
-      plan?.price_id;
+    if (!plan) {
+      this.logger.error(`Plan not found for planId=${planId}`);
+      throw new Error('Plan not found.');
+    }
 
-    if (!priceId) {
-      this.logger.error(`Stripe Price ID not found for planId=${planId}`);
+    if (!plan.externalPriceId) {
+      this.logger.error(
+        `Stripe Price ID (externalPriceId) not set for planId=${planId}`,
+      );
       throw new Error('Stripe Price ID is not set for this plan.');
     }
 
-    return String(priceId);
+    return String(plan.externalPriceId);
   }
 
   /**

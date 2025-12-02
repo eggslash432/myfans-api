@@ -91,7 +91,7 @@ export class PlansController {
       const price = await stripe.prices.create(
         {
           product: product.id,
-          unit_amount: dto.priceJpy * 100, // 円 → 最小単位
+          unit_amount: dto.priceJpy, // 円 → 最小単位
           currency: 'jpy',
           recurring: { interval },
         },
