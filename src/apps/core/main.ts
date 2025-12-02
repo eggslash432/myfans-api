@@ -1,4 +1,4 @@
-// myfans-api/src/apps/core/main.ts
+// api/src/apps/core/main.ts
 
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';

@@ -1,4 +1,4 @@
-// src/apps/subscriptions/subscriptions.controller.ts
+// api/src/apps/subscriptions/subscriptions.controller.ts
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';

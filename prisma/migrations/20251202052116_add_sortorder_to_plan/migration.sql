@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Plan" ADD COLUMN     "sortOrder" INTEGER NOT NULL DEFAULT 0;

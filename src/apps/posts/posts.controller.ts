@@ -1,4 +1,4 @@
-// src/apps/posts/posts.controller.ts
+// api/src/apps/posts/posts.controller.ts
 
 import {
   Controller,
@@ -10,12 +10,17 @@ import {
   Body,
   ForbiddenException,
   NotFoundException,
+  UseInterceptors,
+  UploadedFiles,
 } from '@nestjs/common';
 
 import { PostsService } from './posts.service';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UserJwt } from 'src/shared/types';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 
 @Controller('posts')
 export class PostsController {
@@ -88,4 +93,39 @@ export class PostsController {
 
     return result;
   }
+
+  // --------------------------------------------------
+  // ★ 追加：投稿メディアのアップロード
+  // POST /posts/:id/media
+  // --------------------------------------------------
+  @UseGuards(JwtAuthGuard)
+  @PostMethod(':id/media')
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      storage: diskStorage({
+        destination: 'uploads/posts',
+        filename: (req, file, cb) => {
+          const ext = extname(file.originalname);
+          const name = `post-${req.params.id}-${Date.now()}${ext}`;
+          cb(null, name);
+        },
+      }),
+      limits: { fileSize: 20 * 1024 * 1024 }, // 20MB くらいまで
+    }),
+  )
+  async uploadMedia(
+    @Param('id') postId: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Req() req: any,
+  ) {
+    const user = req.user as UserJwt | undefined;
+    if (!user?.id) {
+      throw new ForbiddenException('ログインが必要です');
+    }
+
+    // 投稿の所有者チェックなどは service 側に寄せてもOK
+    const items = await this.posts.attachMediaToPost(postId, user.id, files);
+
+    return { ok: true, items };
+  }  
 }

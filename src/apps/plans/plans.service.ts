@@ -27,4 +27,13 @@ export class PlansService {
       orderBy: { createdAt: 'desc' },
     });
   }
+
+  async getNextSortOrder(creatorId: string): Promise<number> {
+    const last = await this.prisma.plan.findFirst({
+      where: { creatorId },
+      orderBy: { sortOrder: 'desc' },
+      select: { sortOrder: true },
+    });
+    return (last?.sortOrder ?? 0) + 1;
+  }  
 }

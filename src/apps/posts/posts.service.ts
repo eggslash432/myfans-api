@@ -6,6 +6,7 @@ import {
   Visibility,
   PublishedStatus,
   SubStatus,
+  MediaType,
 } from '@prisma/client';
 import { AccessCheckHelper } from '../helpers/access-check.helper';
 
@@ -95,6 +96,44 @@ export class PostsService {
       },
     });
   }
+
+  async attachMediaToPost(
+    postId: string,
+    userId: string,
+    files: Express.Multer.File[],
+  ) {
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: { id: true, creatorId: true },
+    });
+
+    if (!post) {
+      throw new NotFoundException('投稿が見つかりません');
+    }
+    if (post.creatorId !== userId) {
+      throw new ForbiddenException('自分の投稿のみ編集できます');
+    }
+
+    // ★ mediaAsset → postMedia に修正
+    await this.prisma.postMedia.createMany({
+      data: files.map((f, idx) => ({
+        postId,
+        url: `/uploads/posts/${f.filename}`,
+        mediaType: f.mimetype.startsWith('video/')
+          ? MediaType.video
+          : MediaType.image,
+        sortOrder: idx,
+      })),
+    });
+
+    // ★ こちらも postMedia に修正
+    const created = await this.prisma.postMedia.findMany({
+      where: { postId },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    return created;
+  }  
 
   /**
    * creator の自分の投稿一覧

@@ -30,11 +30,11 @@ export class CreateCheckoutDto {
   @IsUUID()
   postId?: string;      // PPV用
 
-  @IsUrl()
-  successUrl!: string;
+  @IsUrl({ require_tld: false })  // ★ ここ
+  successUrl: string;
 
-  @IsUrl()
-  cancelUrl!: string;
+  @IsUrl({ require_tld: false })  // ★ ここ
+  cancelUrl: string;
 }
 
 // クラス全体に「どちらか必須」を適用

@@ -4,6 +4,8 @@ import {
   Controller, Get, Post, Body, UseGuards, Request, Param, NotFoundException,
   ForbiddenException, UnauthorizedException, BadRequestException, Req,
   Patch,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,6 +16,9 @@ import { PublishedStatus, Role } from '@prisma/client';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UpdateCreatorProfileDto } from './dto/update-creator-profile.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { extname } from 'path';
+import { diskStorage } from 'multer';
 
 @Controller('creators')
 export class CreatorsController {
@@ -84,36 +89,91 @@ export class CreatorsController {
     return this.creatorsService.updateProfile(userId, dto);
   }  
 
+  // ★ 追加：アバターアップロード
+  @Post('me/avatar')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: 'uploads/creators',
+        filename: (req:any, file, cb) => {
+          const ext = extname(file.originalname);
+          const name = `creator-${req.user.id}-${Date.now()}${ext}`;
+          cb(null, name);
+        },
+      }),
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB など
+    }),
+  )
+  async uploadAvatar(@UploadedFile() file: any, @Req() req : any,) {
+    const userId = req.user.id;
+
+    // 公開URLを組み立て（/uploads を StaticAssets で公開している前提）
+    const avatarUrl = `/uploads/creators/${file.filename}`;
+
+    await this.creatorsService.updateProfile(userId, { avatarUrl });
+
+    return { url: avatarUrl };
+  }  
+
   // 詳細: GET /creators/:id
   @Get(':id')
   async detail(@Param('id') id: string) {
     const c = await this.prisma.creator.findUnique({
-      where: { userId: id }, // userId が string の想定（schema/migrationに合わせる）
+      where: { userId: id },
       select: {
         userId: true,
         publicName: true,
+        user: {
+          select: {
+            profile: {
+              select: {
+                bio: true,
+                avatarUrl: true,
+                displayName: true,
+              },
+            },
+          },
+        },
         plans: {
           where: { isActive: true },
           select: {
             id: true,
             name: true,
             priceJpy: true,
+            billingInterval: true,
+            isActive: true,
+            sortOrder: true,
           },
-          orderBy: { createdAt: 'asc' },
+          // 並び順変えたいなら sortOrder 優先でもOK
+          orderBy: [
+            { sortOrder: 'asc' },
+            { createdAt: 'asc' },
+          ],
         },
       },
     });
 
-    if (!c) throw new NotFoundException('クリエイターが見つかりません');
+    if (!c) {
+      throw new NotFoundException('クリエイターが見つかりません');
+    }
 
     return {
       id: c.userId,
-      displayName: c.publicName,
+      // publicName をそのまま出す（フロントでは displayName 的に使う）
+      publicName: c.publicName,
+      // Profile があればそこから bio / avatar も返す
+      bio: c.user.profile?.bio ?? null,
+      avatarUrl: c.user.profile?.avatarUrl ?? null,
+      displayName: c.user.profile?.displayName ?? c.publicName,
       plans: c.plans.map((p) => ({
         id: p.id,
         name: p.name,
-        price: p.priceJpy,
-        interval: 'month',
+        // ★ schema と同じキー名で返す
+        priceJpy: p.priceJpy,
+        billingInterval: p.billingInterval ?? 'month',
+        isActive: p.isActive,
+        sortOrder: p.sortOrder,
       })),
     };
   }

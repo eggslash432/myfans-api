@@ -85,6 +85,11 @@ enum BillingInterval {
   year
 }
 
+enum PlanModalMode{
+  create
+  edit
+}
+
 // ===== Core Users =====
 
 model User {
@@ -169,12 +174,14 @@ model Plan {
   id              String          @id @default(uuid())
   creator         Creator         @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
   creatorId       String
+
   name            String
   priceJpy        Int
   description     String?
   isActive        Boolean         @default(true)
   billingInterval BillingInterval @default(month)
   externalPriceId String?
+  sortOrder       Int             @default(0)
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 

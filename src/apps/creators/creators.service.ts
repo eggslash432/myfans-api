@@ -5,8 +5,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateCreatorDto } from './dto/create-creator.dto';
 import { KycStatus, Role } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
-import Stripe from 'stripe';
 import { UpdateCreatorProfileDto } from './dto/update-creator-profile.dto';
+import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {});
 
@@ -111,24 +111,89 @@ export class CreatorsService {
     };
   }  
 
-  async createSubscriptionCheckout(creatorId: string, planId: string) {
-    const plan = await this.prisma.plan.findUnique({ where: { id: planId } });
-    if (!plan || plan.creatorId !== creatorId) throw new NotFoundException('Plan not found');
-
-    const priceId = plan.externalPriceId; // ← Prismaの型に存在するフィールド名
-    if (!priceId) throw new NotFoundException('externalPriceId (Stripe price) missing');
-
-    const session = await this.stripe.checkout.sessions.create({
-      mode: 'subscription',
-      success_url: `${process.env.APP_ORIGIN}/mypage?result=success`,
-      cancel_url: `${process.env.APP_ORIGIN}/creator/${creatorId}/plans?cancelled=1`,
-      line_items: [{ price: priceId, quantity: 1 }],
-      customer_email: undefined, // 既存Customerに紐付けるなら customer を指定
-      // customer: 'cus_xxx',
-      metadata: { creatorId, planId },
+  // === ここから追加: 公開プロフィール ===
+  async getPublicProfile(creatorId: string) {
+    const creator = await this.prisma.creator.findUnique({
+      where: { userId: creatorId },
+      select: {
+        userId: true,
+        publicName: true,
+        user: {
+          select: {
+            profile: {
+              select: {
+                bio: true,
+                avatarUrl: true,
+                displayName: true,
+              },
+            },
+          },
+        },
+        plans: {
+          where: { isActive: true },
+          orderBy: { sortOrder: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            priceJpy: true,
+            billingInterval: true,
+            isActive: true,
+            sortOrder: true,
+          },
+        },
+      },
     });
 
-    return session.url!; // これをフロントへ返す
+    if (!creator) {
+      throw new NotFoundException('creator not found: ' + creatorId);
+    }
+
+    return {
+      id: creator.userId,
+      publicName: creator.publicName,
+      displayName: creator.user.profile?.displayName ?? creator.publicName,
+      bio: creator.user.profile?.bio ?? null,
+      avatarUrl: creator.user.profile?.avatarUrl ?? null,
+      plans: creator.plans.map((p) => ({
+        id: p.id,
+        name: p.name,
+        priceJpy: p.priceJpy,               // ← Int のまま返す
+        billingInterval: p.billingInterval ?? 'month',
+        isActive: p.isActive,
+        sortOrder: p.sortOrder,
+      })),
+    };
+  }
+
+  async createSubscriptionCheckout(creatorId: string, planId: string) {
+    const plan = await this.prisma.plan.findUnique({ where: { id: planId } });
+    if (!plan || plan.creatorId !== creatorId)
+      throw new NotFoundException('Plan not found');
+
+    const creator = await this.prisma.creator.findUnique({
+      where: { userId: creatorId },
+    });
+    if (!creator?.stripeAccountId) {
+      throw new BadRequestException('Stripe account not linked for creator');
+    }
+
+    const priceId = plan.externalPriceId;
+    if (!priceId) {
+      throw new NotFoundException('externalPriceId (Stripe price) missing');
+    }
+
+    const session = await this.stripe.checkout.sessions.create(
+      {
+        mode: 'subscription',
+        success_url: `${process.env.APP_ORIGIN}/mypage?result=success`,
+        cancel_url: `${process.env.APP_ORIGIN}/creators/${creatorId}?cancelled=1`,
+        line_items: [{ price: priceId, quantity: 1 }],
+        metadata: { creatorId, planId },
+      },
+      { stripeAccount: creator.stripeAccountId }, // ★ 追加
+    );
+
+    return session.url!;
   }
 
   async createStripeAccountForCreator(userId: string) {
