@@ -37,6 +37,28 @@ export class PaymentsService {
     creatorId: string,
     planId: string,
   ) {
+    // ===== 自分のプラン購読の禁止チェック =====
+    const plan = await this.prisma.plan.findUnique({
+      where: { id: planId },
+      select: {
+        id: true,
+        creatorId: true,
+        isActive: true,
+      },
+    });
+
+    if (!plan || !plan.isActive) {
+      throw new Error('プランが存在しないか停止されています');
+    }
+
+    if (plan.creatorId === userId) {
+      throw new Error('自分自身のプランは購読できません');
+    }
+
+    // ← リクエストの creatorId が DB と一致するか念のためチェック
+    if (creatorId !== plan.creatorId) {
+      throw new Error('不正なクリエイターIDです');
+    }    
     const appOrigin =
       this.config.get<string>('appOrigin') ??
       process.env.APP_ORIGIN ??
