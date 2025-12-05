@@ -6,6 +6,7 @@ import {
   Post,
   Req,
   BadRequestException,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -33,7 +34,9 @@ export class PaymentsController {
     @Req() req: any,
   ) {
     const user = req.user as UserJwt | undefined;
-    if (!user?.id) throw new BadRequestException('Unauthenticated');
+    if (!user?.id) {
+      throw new UnauthorizedException('Unauthenticated');
+    }  
 
     const userId = user.id;
 
