@@ -181,32 +181,59 @@ export class CreatorsController {
   // 投稿一覧: GET /creators/:id/posts
   @Get(':id/posts')
   async posts(@Param('id') id: string) {
-    console.log('GET /creators/:id/posts', id);
     const posts = await this.prisma.post.findMany({
       where: {
         creatorId: id,
-        publishedStatus: PublishedStatus.published, // ← enumで比較
+        publishedStatus: PublishedStatus.published,
       },
       select: {
         id: true,
         title: true,
-        visibility: true,    // ← select は boolean 指定
+        visibility: true,
         priceJpy: true,
+        publishedStatus: true,
         publishedAt: true,
+        createdAt: true,
+        creatorId: true,
+
+        // ★ Creator -> User -> Profile(displayName)
+        creator: {
+          select: {
+            user: {
+              select: {
+                profile: {
+                  select: { displayName: true },
+                },
+              },
+            },
+          },
+        },
+
+        _count: {
+          select: { reports: true },
+        },
       },
       orderBy: { publishedAt: 'desc' },
       take: 20,
     });
-    console.log('posts found =', posts);
 
     const items = posts.map((p) => ({
       id: p.id,
       title: p.title,
-      isFree: p.visibility === 'free',   // DB側が 'free' | 'plan' | 'paid_single' 想定
-      price: p.priceJpy ?? null,
+      visibility: p.visibility,
+      priceJpy: p.priceJpy ?? null,
+      publishedStatus: p.publishedStatus,
+      publishedAt: p.publishedAt,
+      createdAt: p.createdAt,
+      creatorId: p.creatorId ?? null,
+      // optional chaining で型安全に
+      creatorName: p.creator?.user.profile?.displayName ?? null,
+      reportsCount: p._count.reports ?? 0,
     }));
+
     return { items };
   }
+
 
   // 自分の投稿作成: POST /creators/me/posts
   @UseGuards(JwtAuthGuard)

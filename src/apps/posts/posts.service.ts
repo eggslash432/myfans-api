@@ -51,7 +51,7 @@ export class PostsService {
         data: media.map((m: any, idx: number) => ({
           postId: post.id,
           url: m.url,
-          mediaType: m.mediaType,
+          mediaType: m.mediaType as MediaType, // "image" | "video" | "audio" を期待
           sortOrder: idx,
         })),
       });
@@ -114,26 +114,36 @@ export class PostsService {
       throw new ForbiddenException('自分の投稿のみ編集できます');
     }
 
-    // ★ mediaAsset → postMedia に修正
+    // mimetype から MediaType を判定（image / video / audio）
     await this.prisma.postMedia.createMany({
-      data: files.map((f, idx) => ({
-        postId,
-        url: `/uploads/posts/${f.filename}`,
-        mediaType: f.mimetype.startsWith('video/')
-          ? MediaType.video
-          : MediaType.image,
-        sortOrder: idx,
-      })),
+      data: files.map((f, idx) => {
+        const mime = f.mimetype ?? '';
+        let mediaType: MediaType;
+
+        if (mime.startsWith('video/')) {
+          mediaType = MediaType.video;
+        } else if (mime.startsWith('audio/')) {
+          mediaType = MediaType.audio;
+        } else {
+          mediaType = MediaType.image;
+        }
+
+        return {
+          postId,
+          url: `/uploads/posts/${f.filename}`,
+          mediaType,
+          sortOrder: idx,
+        };
+      }),
     });
 
-    // ★ こちらも postMedia に修正
     const created = await this.prisma.postMedia.findMany({
       where: { postId },
       orderBy: { sortOrder: 'asc' },
     });
 
     return created;
-  }  
+  }
 
   /**
    * creator の自分の投稿一覧
