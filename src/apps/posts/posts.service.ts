@@ -63,16 +63,67 @@ export class PostsService {
   /**
    * 投稿の詳細取得
    * - 閲覧可能判定つき
+   * - 閲覧できなくても 200 で返し、canView=false にする
    */
   async getPostDetail(postId: string, viewerId: string | null) {
-    const result = await this.accessHelper.assertCanViewPost(viewerId, postId);
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      include: {
+        creator: true,
+        media: true,
+      },
+    });
 
-    const { post } = result;
+    if (!post) {
+      throw new NotFoundException('投稿が見つかりません');
+    }
+
+    let canView = false;
+
+    if (post.visibility === Visibility.free) {
+      canView = true;
+    } else if (viewerId && post.creatorId === viewerId) {
+      canView = true;
+    } else if (viewerId && post.visibility === Visibility.plan) {
+      const activeSub = await this.prisma.subscription.findFirst({
+        where: {
+          // viewerId は string | null なので、null のときは undefined にする
+          userId: viewerId ?? undefined,
+          // post.creatorId も string | null 扱いになっているので同じく
+          creatorId: post.creatorId ?? undefined,
+          status: SubStatus.active,
+          currentPeriodEnd: { gt: new Date() },
+        },
+      });
+
+      if (activeSub) {
+        canView = true;
+      }
+    } else if (viewerId && post.visibility === Visibility.paid_single) {
+      const access = await this.prisma.postAccess.findUnique({
+        where: {
+          userId_postId: {
+            userId: viewerId as string,    // ★ ここもキャスト
+            postId,
+          },
+        },
+      });
+
+      if (
+        access &&
+        (!access.expiresAt || access.expiresAt > new Date())
+      ) {
+        canView = true;
+      }
+    }
+
     return {
       ...post,
-      canView: true,
+      canView,
+      isLocked: !canView,
     };
   }
+
 
   /**
    * 投稿を編集（必要なら）
@@ -150,7 +201,10 @@ export class PostsService {
    */
   async getMyPosts(userId: string) {
     return await this.prisma.post.findMany({
-      where: { creatorId: userId },
+      where: { 
+        creatorId: userId,
+        publishedStatus: PublishedStatus.published,
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         media: true,

@@ -46,7 +46,15 @@ export class CreatorsController {
       select: {
         userId: true,
         publicName: true,
-        _count: { select: { posts: true } },
+        _count: {
+          select: {
+            posts: {
+              where: {
+                publishedStatus: PublishedStatus.published,  // ★ draft/private除外
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: 12,
