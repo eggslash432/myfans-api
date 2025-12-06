@@ -1,4 +1,4 @@
-// src/apps/payments/stripe-webhook.service.ts
+// api/src/apps/payments/stripe-webhook.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import Stripe from 'stripe';

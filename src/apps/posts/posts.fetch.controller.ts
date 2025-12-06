@@ -19,7 +19,7 @@ export class PostsFetchController {
     
     const { post, canView } =
       await this.accessCheckHelper.assertCanViewPost(
-        user ? { id: user.id, role: user.role as Role } : null,
+        user ? user.id : null,
         id,
       );
 

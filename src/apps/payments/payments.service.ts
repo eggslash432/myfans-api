@@ -25,11 +25,11 @@ export class PaymentsService {
     this.stripe = new Stripe(secret, {});
   }
 
+// api/src/apps/payments/payments.service.ts
+
   /**
    * プラン購読の Checkout Session 作成
-   * - success/cancel URL は ENV or ConfigService から取得
-   * - customer は ensureStripeCustomer で作成/再利用
-   * - line_items.price はプランに紐づいた Stripe Price ID を使用
+   * - Plan.priceJpy / billingInterval から price_data を組み立てる
    * - metadata に userId / planId / creatorId を載せて Webhook 側で利用
    */
   async createCheckoutForPlan(
@@ -37,13 +37,16 @@ export class PaymentsService {
     creatorId: string,
     planId: string,
   ) {
-    // ===== 自分のプラン購読の禁止チェック =====
+    // プラン情報を取得（価格や名前も使う）
     const plan = await this.prisma.plan.findUnique({
       where: { id: planId },
       select: {
         id: true,
         creatorId: true,
         isActive: true,
+        name: true,
+        priceJpy: true,
+        billingInterval: true,
       },
     });
 
@@ -51,14 +54,20 @@ export class PaymentsService {
       throw new Error('プランが存在しないか停止されています');
     }
 
+    // 自分のプラン購読は禁止
     if (plan.creatorId === userId) {
       throw new Error('自分自身のプランは購読できません');
     }
 
-    // ← リクエストの creatorId が DB と一致するか念のためチェック
+    // リクエストされた creatorId が DB のものと一致するか確認
     if (creatorId !== plan.creatorId) {
       throw new Error('不正なクリエイターIDです');
-    }    
+    }
+
+    if (!plan.priceJpy || plan.priceJpy <= 0) {
+      throw new Error('プランの価格が正しく設定されていません');
+    }
+
     const appOrigin =
       this.config.get<string>('appOrigin') ??
       process.env.APP_ORIGIN ??
@@ -77,21 +86,29 @@ export class PaymentsService {
     const successUrl = `${appOrigin}${successPath}`;
     const cancelUrl = `${appOrigin}${cancelPath}`;
 
-    // プランに対応する Stripe Price ID を取得
-    const priceId = await this.getStripePriceId(planId);
-
     // Webhook 側で使う metadata
     const metadata = {
       userId,
-      planId,
+      planId: plan.id,
       creatorId,
     };
+
+    // Prisma の enum BillingInterval -> Stripe の interval 文字列に変換
+    const interval =
+      plan.billingInterval === 'year' ? 'year' : 'month';
 
     const session = await this.stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [
         {
-          price: priceId,
+          price_data: {
+            currency: 'jpy',
+            unit_amount: plan.priceJpy, // JPY は 1円 = 1 unit
+            recurring: { interval },
+            product_data: {
+              name: plan.name,
+            },
+          },
           quantity: 1,
         },
       ],
@@ -108,6 +125,7 @@ export class PaymentsService {
 
     return { url: session.url };
   }
+
 
   /**
    * （オプション）PPV / 単品購入用 Checkout Session 作成
@@ -171,6 +189,9 @@ export class PaymentsService {
       cancel_url: cancelUrl,
       customer: await this.ensureStripeCustomer(userId),
       metadata,
+      payment_intent_data: {              // ★ これを追加
+        metadata,
+      },
     });
 
     this.logger.log(`[PPV CheckoutSession] Created: ${session.id}`);
@@ -213,47 +234,41 @@ export class PaymentsService {
   private async ensureStripeCustomer(
     userId: string,
   ): Promise<string | undefined> {
-    const user: any = await this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
         email: true,
-        stripeCustomerId: true as any,
-        stripe_customer_id: true as any,
-      } as any,
+        stripeCustomerId: true,
+      },
     });
 
     if (!user) {
-      this.logger.warn(
-        `ensureStripeCustomer: user not found (id=${userId})`,
-      );
+      this.logger.warn(`ensureStripeCustomer: user not found (id=${userId})`);
       return undefined;
     }
 
-    const current = user.stripeCustomerId ?? user.stripe_customer_id;
-    if (current) return String(current);
+    if (user.stripeCustomerId) {
+      return user.stripeCustomerId;
+    }
 
-    // なければ新規作成
     const customer = await this.stripe.customers.create({
       email: user.email ?? undefined,
       metadata: { userId },
     });
 
-    // camelCase / snake_case どちらでも保存できるようトライ
     try {
       await this.prisma.user.update({
         where: { id: userId },
-        data: { stripeCustomerId: customer.id } as any,
+        data: { stripeCustomerId: customer.id },
       });
-    } catch {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: { stripe_customer_id: customer.id } as any,
-      });
+    } catch (e) {
+      this.logger.error('Failed to save stripeCustomerId', e as any);
     }
 
     return customer.id;
   }
+
 
   /**
    * Payment + 分配（Creator / Platform）を作成する内部ヘルパー

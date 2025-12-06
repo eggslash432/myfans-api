@@ -1,4 +1,4 @@
-// src/apps/payments/stripe-webhook.controller.ts
+// api/src/apps/payments/stripe-webhook.controller.ts
 import {
   BadRequestException,
   Controller,
@@ -71,17 +71,18 @@ export class StripeWebhookController {
         );
         break;
 
+      // ★ ここを修正
+      case 'customer.subscription.created':
       case 'customer.subscription.updated':
-        await this.webhookService.handleSubscriptionUpdated(event.data.object as Stripe.Subscription);
-        break;
-
-      case 'invoice.payment_succeeded':
-        await this.webhookService.handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice);
-        break;
-        
       case 'customer.subscription.deleted':
         await this.webhookService.handleSubscriptionUpdated(
           event.data.object as Stripe.Subscription,
+        );
+        break;
+
+      case 'invoice.payment_succeeded':
+        await this.webhookService.handleInvoicePaymentSucceeded(
+          event.data.object as Stripe.Invoice,
         );
         break;
 
@@ -89,11 +90,9 @@ export class StripeWebhookController {
         await this.webhookService.handlePaymentIntentSucceeded(
           event.data.object as Stripe.PaymentIntent,
         );
-        break;        
+        break;
 
       default:
-        // 必要ならログだけ残す
-        // this.logger.log(`Unhandled event type: ${event.type}`);
         break;
     }
 
