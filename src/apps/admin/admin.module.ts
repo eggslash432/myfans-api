@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AdminPostsController } from './admin.posts.controller';
 import { AdminReportsController } from './admin-reports.controller';
 import { AdminSummaryController } from './admin-summary.controller';
+import { AdminService } from './admin.service';
 
 @Module({
   controllers: [
@@ -15,6 +16,9 @@ import { AdminSummaryController } from './admin-summary.controller';
     AdminReportsController,
     AdminSummaryController,
   ],
-  providers: [PrismaService],
+  providers: [
+    PrismaService,
+    AdminService,
+  ],
 })
 export class AdminModule {}

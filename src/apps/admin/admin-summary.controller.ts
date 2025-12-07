@@ -4,9 +4,12 @@ import { Controller, Get, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminOnlyGuard } from '../access-control/admin-only.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { Role } from '@prisma/client';
 
 @UseGuards(JwtAuthGuard, AdminOnlyGuard)
-@Controller('api/admin/summary')
+@Controller('admin/summary')
 export class AdminSummaryController {
   constructor(private readonly prisma: PrismaService) {}
 
@@ -17,10 +20,13 @@ export class AdminSummaryController {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    // 月間売上（payment）
+
     const payments = await this.prisma.payment.aggregate({
-      where: { createdAt: { gte: monthStart } },
-      _sum: { amountJpy: true },
+      where: {
+        paidAt: { gte: monthStart },
+        paymentStatus: 'paid',
+      },
+      _sum: { platformAmountJpy: true },
     });
 
     // 月間新規ユーザー
@@ -34,7 +40,7 @@ export class AdminSummaryController {
     });
 
     return {
-      salesMonthly: payments._sum.amountJpy ?? 0,
+      salesMonthly: payments._sum.platformAmountJpy ?? 0,
       newUsersMonthly: newUsers,
       reportsPending: pendingReports,
     };
