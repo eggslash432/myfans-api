@@ -29,7 +29,7 @@ import { UpdatePostDto } from './dto/update-post.dto';
 
 @Controller('posts')
 export class PostsController {
-  constructor(private readonly posts: PostsService) {}
+  constructor(private readonly postsService: PostsService) {}
 
   /**
    * 公開フィード
@@ -38,7 +38,7 @@ export class PostsController {
    */
   @Get()
   async listPublicPosts() {
-    const items = await this.posts.getPublicFeed();
+    const items = await this.postsService.getPublicFeed();
     return { items };
   }
 
@@ -54,7 +54,7 @@ export class PostsController {
       throw new ForbiddenException('ログインが必要です');
     }
 
-    const posts = await this.posts.getMyPosts(user.id);
+    const posts = await this.postsService.getMyPosts(user.id);
     return { items: posts };
   }
 
@@ -70,7 +70,7 @@ export class PostsController {
     const user = req.user as UserJwt | undefined;
     const viewerId = user?.id ?? null;
 
-    const detail = await this.posts.getPostDetail(id, viewerId);
+    const detail = await this.postsService.getPostDetail(id, viewerId);
     if (!detail) {
       throw new NotFoundException('投稿が見つかりません');
     }
@@ -94,7 +94,7 @@ export class PostsController {
     }
 
     const reason = body.reason ?? '';
-    const result = await this.posts.reportPost(user.id, id, reason);
+    const result = await this.postsService.reportPost(user.id, id, reason);
 
     return result;
   }
@@ -167,7 +167,7 @@ export class PostsController {
     );
 
     // ここまで来た時点で、画像はすべて「最大1280px」程度に縮小されている
-    const items = await this.posts.attachMediaToPost(postId, user.id, files);
+    const items = await this.postsService.attachMediaToPost(postId, user.id, files);
 
     return { ok: true, items };
   }
@@ -183,6 +183,13 @@ export class PostsController {
     if (!userId) {
       throw new UnauthorizedException('JWTが無効です');
     }
-    return this.posts.updateMyPost(userId, id, dto);
+    return this.postsService.updateMyPost(userId, id, dto);
+  }  
+
+  // 公開: 管理者投稿一覧
+  @Get('public/admin')
+  async getAdminPosts() {
+    // 必要なら limit を Query で受けてもOK
+    return this.postsService.getAdminPosts(5);
   }  
 }

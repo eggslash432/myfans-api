@@ -7,6 +7,7 @@ import {
   PublishedStatus,
   SubStatus,
   MediaType,
+  Role,
 } from '@prisma/client';
 import { AccessCheckHelper } from '../helpers/access-check.helper';
 import { UpdatePostDto } from './dto/update-post.dto';
@@ -23,6 +24,13 @@ export class PostsService {
    */
   async createPost(userId: string, dto: any) {
     const { title, body, visibility, planId, priceJpy, media } = dto;
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    const isOfficial = user?.role === Role.admin;    
 
     // plan投稿なのにplanIdがない → エラー
     if (visibility === Visibility.plan && !planId) {
@@ -43,6 +51,7 @@ export class PostsService {
         planId: planId || null,
         priceJpy: priceJpy || null,
         publishedStatus: PublishedStatus.published,
+        isOfficial,
       },
     });
 
@@ -295,5 +304,23 @@ export class PostsService {
     });
 
     return { ok: true };
+  }
+
+  /**
+   * 管理者(運営)の投稿一覧
+   * - ホーム画面の「お知らせ」用
+   */
+  async getAdminPosts(limit = 5) {
+    return await this.prisma.post.findMany({
+      where: {
+        publishedStatus: PublishedStatus.published,
+        isOfficial: true,
+      },
+      orderBy: { publishedAt: 'desc' },
+      take: limit,
+      include: {
+        media: true,
+      },
+    });
   }
 }

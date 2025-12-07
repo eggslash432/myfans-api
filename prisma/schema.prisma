@@ -232,6 +232,7 @@ model Post {
   id              String          @id @default(uuid())
   creatorId       String?
   creator         Creator?         @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
+  isOfficial      Boolean          @default(false) 
   title           String
   body            String?
   visibility      Visibility
