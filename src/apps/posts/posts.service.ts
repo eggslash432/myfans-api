@@ -9,6 +9,7 @@ import {
   MediaType,
 } from '@prisma/client';
 import { AccessCheckHelper } from '../helpers/access-check.helper';
+import { UpdatePostDto } from './dto/update-post.dto';
 
 @Injectable()
 export class PostsService {
@@ -126,26 +127,65 @@ export class PostsService {
 
 
   /**
-   * 投稿を編集（必要なら）
+   * creator の自分の投稿編集
    */
-  async updatePost(userId: string, postId: string, dto: any) {
-    const post = await this.prisma.post.findUnique({ where: { id: postId } });
-    if (!post) throw new NotFoundException('投稿が見つかりません');
+  async updateMyPost(userId: string, postId: string, dto: UpdatePostDto) {
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+    });
 
-    if (post.creatorId !== userId) {
-      throw new ForbiddenException('自分の投稿のみ編集できます');
+    if (!post || post.creatorId !== userId) {
+      // 投稿が存在しない or 他の人の投稿
+      throw new ForbiddenException('この投稿は編集できません');
     }
 
-    return await this.prisma.post.update({
+    const nextPublishedStatus =
+      dto.publishedStatus ?? post.publishedStatus;
+
+    // publishedAt の扱い
+    let nextPublishedAt = post.publishedAt;
+    const wasPublished = post.publishedStatus === PublishedStatus.published;
+    const willBePublished = nextPublishedStatus === PublishedStatus.published;
+
+    if (!wasPublished && willBePublished) {
+      // 初めて公開 → 今の時間
+      nextPublishedAt = new Date();
+    } else if (wasPublished && !willBePublished) {
+      // 公開→下書き/非公開に戻した → null でもOK（仕様に合わせて）
+      nextPublishedAt = null;
+    }
+
+    const data: any = {};
+
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.body !== undefined) data.body = dto.body;
+    if (dto.visibility !== undefined) data.visibility = dto.visibility;
+
+    if (dto.priceJpy !== undefined) {
+      data.priceJpy = dto.priceJpy;
+    }
+
+    if (dto.publishedStatus !== undefined) {
+      data.publishedStatus = nextPublishedStatus;
+      data.publishedAt = nextPublishedAt;
+    }
+
+    const updated = await this.prisma.post.update({
       where: { id: postId },
-      data: {
-        title: dto.title ?? post.title,
-        body: dto.body ?? post.body,
-        visibility: dto.visibility ?? post.visibility,
-        planId: dto.planId ?? post.planId,
-        priceJpy: dto.priceJpy ?? post.priceJpy,
+      data,
+      select: {
+        id: true,
+        title: true,
+        body: true,
+        visibility: true,
+        priceJpy: true,
+        publishedStatus: true,
+        publishedAt: true,
+        createdAt: true,
       },
     });
+
+    return updated;
   }
 
   async attachMediaToPost(
@@ -203,7 +243,6 @@ export class PostsService {
     return await this.prisma.post.findMany({
       where: { 
         creatorId: userId,
-        publishedStatus: PublishedStatus.published,
       },
       orderBy: { createdAt: 'desc' },
       include: {

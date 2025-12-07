@@ -12,6 +12,8 @@ import {
   NotFoundException,
   UseInterceptors,
   UploadedFiles,
+  Patch,
+  UnauthorizedException,
 } from '@nestjs/common';
 
 import { PostsService } from './posts.service';
@@ -23,6 +25,7 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import sharp from 'sharp';
 import { promises as fs } from 'fs';
+import { UpdatePostDto } from './dto/update-post.dto';
 
 @Controller('posts')
 export class PostsController {
@@ -168,4 +171,18 @@ export class PostsController {
 
     return { ok: true, items };
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/:id')
+  async updateMyPost(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdatePostDto,
+  ) {
+    const userId: string | undefined = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('JWTが無効です');
+    }
+    return this.posts.updateMyPost(userId, id, dto);
+  }  
 }

@@ -242,6 +242,48 @@ export class CreatorsController {
     return { items };
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('me/posts')
+  async myPosts(@Req() req: any) {
+    const userId = req.user.id as string;
+    if (!userId) {
+      throw new UnauthorizedException('JWTが無効です');
+    }
+
+    const posts = await this.prisma.post.findMany({
+      where: { creatorId: userId },
+      select: {
+        id: true,
+        title: true,
+        visibility: true,
+        priceJpy: true,
+        publishedStatus: true,
+        publishedAt: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const toDto = (p: typeof posts[number]) => ({
+      id: p.id,
+      title: p.title,
+      visibility: p.visibility,
+      priceJpy: p.priceJpy ?? null,
+      publishedStatus: p.publishedStatus,
+      publishedAt: p.publishedAt,
+      createdAt: p.createdAt,
+    });
+
+    const published = posts
+      .filter((p) => p.publishedStatus === PublishedStatus.published)
+      .map(toDto);
+
+    const drafts = posts
+      .filter((p) => p.publishedStatus !== PublishedStatus.published)
+      .map(toDto);
+
+    return { published, drafts };
+  }  
 
   // 自分の投稿作成: POST /creators/me/posts
   @UseGuards(JwtAuthGuard)
