@@ -229,7 +229,13 @@ export class CreatorsService {
   async getMe(userIdRaw: string) {
     const userId = String(userIdRaw);
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    // ★ profile も一緒に取得する
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        profile: true,
+      },
+    });
     if (!user) {
       throw new NotFoundException('user not found: ' + userId);
     }
@@ -321,6 +327,9 @@ export class CreatorsService {
     return {
       isCreator: true,
       publicName: creator.publicName,
+      // ★ ここで profile から bio / avatarUrl を返す
+      bio: user.profile?.bio ?? '',
+      avatarUrl: user.profile?.avatarUrl ?? null,      
       stripeAccountId: creator.stripeAccountId,
       stripeKycStatus,
       stripeChargesEnabled,
