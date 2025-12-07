@@ -225,6 +225,41 @@ export class CreatorsService {
     return link.url;
   }  
 
+  /**
+   * クリエイター本人用のシンプル売上サマリー
+   * - 累計売上（creator取り分ベース）
+   * - アクティブ購読者数
+   */
+  async getMySimpleAnalytics(userId: string) {
+    // 累計売上（creatorAmountJpy を合計）
+    const paymentAgg = await this.prisma.payment.aggregate({
+      where: {
+        creatorId: userId,
+        paymentStatus: 'paid',   // enumなら必要に応じて調整
+      },
+      _sum: {
+        creatorAmountJpy: true,  // createPaymentWithShare が入れているカラム
+      },
+    });
+
+    const totalRevenueJpy = paymentAgg._sum.creatorAmountJpy ?? 0;
+
+    // アクティブ購読者数（サブスクリプション）
+    const totalSubscribers = await this.prisma.subscription.count({
+      where: {
+        creatorId: userId,
+        status: {
+          in: ['active', 'trialing'] as any, // SubscriptionStatus に合わせて調整
+        },
+      },
+    });
+
+    return {
+      totalRevenueJpy,
+      totalSubscribers,
+    };
+  }  
+
   // クリエイター情報 + KYCステータス取得（本人用）
   async getMe(userIdRaw: string) {
     const userId = String(userIdRaw);

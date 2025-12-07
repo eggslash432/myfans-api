@@ -363,4 +363,16 @@ export class CreatorsController {
     const userId = req.user.id as string;
     return this.creatorsService.startKyc(userId);
   }  
+
+  // 売上サマリー: GET /creators/me/analytics
+  @UseGuards(JwtAuthGuard)
+  @Get('me/analytics')
+  async getMyAnalytics(@Req() req: any) {
+    const userId = req.user.id as string;
+    if (!userId) {
+      throw new UnauthorizedException('JWTが無効です');
+    }
+
+    return this.creatorsService.getMySimpleAnalytics(userId);
+  }  
 }
