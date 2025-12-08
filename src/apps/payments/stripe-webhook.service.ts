@@ -21,16 +21,17 @@ export class StripeWebhookService {
 
     // 1. 明確にリジェクトされているパターン
     if (kyc?.disabled_reason?.startsWith('rejected')) {
-      status = KycStatus.rejected;  // フロントからもわかりやすい
+      status = KycStatus.rejected;
     }
-    // 2. disabled_reason なし & currently_due/past_due/eventually_due が全部空 → OK
+    // 2. 今すぐ必要な項目はすべて埋まっていて、決済・出金が有効 → 承認済み扱い
     else if (
-      kyc?.disabled_reason == null &&
+      kyc?.disabled_reason == null && // null/undefined だけチェック
       (kyc?.currently_due?.length ?? 0) === 0 &&
       (kyc?.past_due?.length ?? 0) === 0 &&
-      (kyc?.eventually_due?.length ?? 0) === 0
+      account.charges_enabled &&
+      account.payouts_enabled
     ) {
-      status = KycStatus.approved;  // ★ フロントの isKycOk === 'verified' に合わせる
+      status = KycStatus.approved;
     }
     // 3. それ以外は pending
     else {
@@ -55,7 +56,6 @@ export class StripeWebhookService {
       `Stripe account ${account.id} KYC updated -> ${status}`,
     );
   }
-
 
   // --- Checkout 完了（PPV / 初回決済） ---
   async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {

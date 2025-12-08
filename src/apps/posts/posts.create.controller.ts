@@ -56,6 +56,9 @@ export class PostsCreateController {
       throw new ForbiddenException('投稿権限がありません');
     }
 
+    // ★ admin かどうか
+    const isAdmin = user.role === Role.admin;
+
     // ★ creator の場合だけ Creator を紐付け
     let creatorId: string | null = null;
     if (user.role === Role.creator) {
@@ -66,23 +69,21 @@ export class PostsCreateController {
     // 🔥 admin のときは「無料投稿」へ強制
     // ---------------------------------------------
     const visibility: Visibility =
-      user.role === Role.admin ? Visibility.free : dto.visibility;
+      isAdmin ? Visibility.free : dto.visibility;
 
     const planId: string | null =
-      user.role === Role.admin
+      isAdmin
         ? null
         : dto.visibility === Visibility.plan
         ? dto.planId ?? null
         : null;
 
     const priceJpy: number | null =
-      user.role === Role.admin
+      isAdmin
         ? null
         : dto.visibility === Visibility.paid_single
         ? dto.priceJpy ?? null
         : null;
-
-    // ---------------------------------------------
 
     // 公開ステータス（draft / published）
     const toPublishedStatus = (v: unknown): PublishedStatus => {
@@ -109,7 +110,6 @@ export class PostsCreateController {
         body: dto.body,
         ageRating: dto.ageRating,
 
-        // ★ dto ではなくローカル変数を使う（admin 上書き済み）
         visibility,
         planId,
         priceJpy,
@@ -120,6 +120,9 @@ export class PostsCreateController {
         // 公開状態
         publishedStatus: pub,
         publishedAt: pubAt,
+
+        // ★ ここ！ admin の投稿は isOfficial=true
+        isOfficial: isAdmin,
       },
       select: {
         id: true,

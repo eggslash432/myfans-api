@@ -30,7 +30,11 @@ export class PostsService {
       select: { role: true },
     });
 
-    const isOfficial = user?.role === Role.admin;    
+    const isOfficial = user?.role === Role.admin;  
+    
+    if (user?.role === Role.admin && visibility !== Visibility.free) {
+      throw new ForbiddenException('管理者は無料投稿のみ作成できます');
+    }    
 
     // plan投稿なのにplanIdがない → エラー
     if (visibility === Visibility.plan && !planId) {
@@ -51,7 +55,7 @@ export class PostsService {
         planId: planId || null,
         priceJpy: priceJpy || null,
         publishedStatus: PublishedStatus.published,
-        isOfficial,
+        isOfficial: isOfficial,
       },
     });
 
