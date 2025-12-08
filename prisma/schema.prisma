@@ -293,6 +293,13 @@ model Favorite {
 
 
 // ===== Payments & Operational =====
+model FeeSetting {
+  id             Int      @id @default(1)
+  managerPercent Int
+  shopPercent    Int
+  creatorPercent Int
+  updatedAt      DateTime @updatedAt
+}
 
 model Payment {
   id            String        @id @default(uuid())
@@ -313,6 +320,10 @@ model Payment {
 
   creatorAmountJpy  Int?
   platformAmountJpy Int?
+
+  managerPercent Int?
+  shopPercent    Int?
+  creatorPercent Int?  
 
   @@index([paymentStatus, createdAt])
   @@index([creatorId])
@@ -344,14 +355,6 @@ model WebhookEvent {
   processedAt    DateTime?
 
   @@index([provider, eventType, createdAt])
-}
-
-model FeeSetting {
-  id             Int      @id @default(1)
-  managerPercent Int
-  shopPercent    Int
-  creatorPercent Int
-  updatedAt      DateTime @updatedAt
 }
 
 model Report {

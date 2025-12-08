@@ -4,6 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/apps/prisma/prisma.service';
 import Stripe from 'stripe';
+import { FeeSetting } from '@prisma/client';
 
 @Injectable()
 export class PaymentsService {
@@ -37,6 +38,17 @@ export class PaymentsService {
     creatorId: string,
     planId: string,
   ) {
+
+    // creator の Stripe アカウントID を取得
+    const creator = await this.prisma.creator.findUnique({
+      where: { userId: creatorId },
+      select: { stripeAccountId: true },
+    });
+
+    if (!creator?.stripeAccountId) {
+      throw new Error('クリエイターの Stripe アカウントが設定されていません');
+    }
+
     // プラン情報を取得（価格や名前も使う）
     const plan = await this.prisma.plan.findUnique({
       where: { id: planId },
@@ -97,28 +109,43 @@ export class PaymentsService {
     const interval =
       plan.billingInterval === 'year' ? 'year' : 'month';
 
+    const feeSetting = await this.getFeeSetting();
+
+    // Subscription の税別金額に FeeSetting を反映
+    const split = this.splitByFeeSetting(plan.priceJpy, feeSetting);
+    const applicationFee = split.managerAmountJpy + split.shopAmountJpy;      
+
     const session = await this.stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [
         {
           price_data: {
             currency: 'jpy',
-            unit_amount: plan.priceJpy, // JPY は 1円 = 1 unit
+            unit_amount: plan.priceJpy,
             recurring: { interval },
-            product_data: {
-              name: plan.name,
-            },
+            product_data: { name: plan.name },
           },
           quantity: 1,
         },
       ],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      customer: await this.ensureStripeCustomer(userId),
-      metadata,
       subscription_data: {
         metadata,
+        application_fee_percent: undefined, // 使用しない
+        transfer_data: {
+          // 定期課金も自動でクリエイターへ送る
+          destination: creator.stripeAccountId,
+        },
       },
+      payment_intent_data: {
+        application_fee_amount: applicationFee,
+        transfer_data: {
+          destination: creator.stripeAccountId,
+        },
+      },
+      customer: await this.ensureStripeCustomer(userId),
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata,
     });
 
     this.logger.log(`[CheckoutSession] Created: ${session.id}`);
@@ -140,12 +167,10 @@ export class PaymentsService {
 
     const successPath =
       this.config.get<string>('stripePpvSuccessPath') ??
-      process.env.STRIPE_PPV_SUCCESS_PATH ??
       '/mypage?ppv=success';
 
     const cancelPath =
       this.config.get<string>('stripePpvCancelPath') ??
-      process.env.STRIPE_PPV_CANCEL_PATH ??
       '/mypage?ppv=cancel';
 
     const successUrl = `${appOrigin}${successPath}`;
@@ -153,17 +178,26 @@ export class PaymentsService {
 
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      select: {
-        id: true,
-        title: true,
-        priceJpy: true,
-        creatorId: true,
+      include: {
+        creator: {
+          select: { stripeAccountId: true },
+        },
       },
     });
 
-    if (!post || post.priceJpy == null) {
+    if (!post?.priceJpy) {
       throw new Error('この投稿は PPV 価格が設定されていません');
     }
+
+    if (!post?.creator?.stripeAccountId) {
+      throw new Error('クリエイターが Stripe Connect アカウントを設定していません');
+    }
+
+    // ★ FeeSetting に基づいて分配
+    const feeSetting = await this.getFeeSetting();
+    const split = this.splitByFeeSetting(post.priceJpy, feeSetting);
+
+    const applicationFee = split.managerAmountJpy + split.shopAmountJpy;
 
     const metadata = {
       userId,
@@ -177,10 +211,8 @@ export class PaymentsService {
         {
           price_data: {
             currency: 'jpy',
-            unit_amount: post.priceJpy, // JPY は1円=1unit
-            product_data: {
-              name: post.title,
-            },
+            unit_amount: post.priceJpy,
+            product_data: { name: post.title },
           },
           quantity: 1,
         },
@@ -189,42 +221,45 @@ export class PaymentsService {
       cancel_url: cancelUrl,
       customer: await this.ensureStripeCustomer(userId),
       metadata,
-      payment_intent_data: {              // ★ これを追加
+      payment_intent_data: {
         metadata,
+        application_fee_amount: applicationFee,
+        transfer_data: {
+          destination: post.creator.stripeAccountId,
+        },
       },
     });
 
-    this.logger.log(`[PPV CheckoutSession] Created: ${session.id}`);
-
     return { url: session.url };
   }
+
 
   /**
    * プランID → Stripe Price ID を取得
    * - 現行スキーマの externalPriceId を使う
    */
-  private async getStripePriceId(planId: string): Promise<string> {
-    const plan = await this.prisma.plan.findUnique({
-      where: { id: planId },
-      select: {
-        externalPriceId: true,
-      },
-    });
+  // private async getStripePriceId(planId: string): Promise<string> {
+  //   const plan = await this.prisma.plan.findUnique({
+  //     where: { id: planId },
+  //     select: {
+  //       externalPriceId: true,
+  //     },
+  //   });
 
-    if (!plan) {
-      this.logger.error(`Plan not found for planId=${planId}`);
-      throw new Error('Plan not found.');
-    }
+  //   if (!plan) {
+  //     this.logger.error(`Plan not found for planId=${planId}`);
+  //     throw new Error('Plan not found.');
+  //   }
 
-    if (!plan.externalPriceId) {
-      this.logger.error(
-        `Stripe Price ID (externalPriceId) not set for planId=${planId}`,
-      );
-      throw new Error('Stripe Price ID is not set for this plan.');
-    }
+  //   if (!plan.externalPriceId) {
+  //     this.logger.error(
+  //       `Stripe Price ID (externalPriceId) not set for planId=${planId}`,
+  //     );
+  //     throw new Error('Stripe Price ID is not set for this plan.');
+  //   }
 
-    return String(plan.externalPriceId);
-  }
+  //   return String(plan.externalPriceId);
+  // }
 
   /**
    * ユーザーに Stripe Customer を割り当て（無ければ作成）
@@ -273,15 +308,7 @@ export class PaymentsService {
   /**
    * Payment + 分配（Creator / Platform）を作成する内部ヘルパー
    */
-  async createPaymentWithShare(params: {
-    userId: string;
-    creatorId: string;
-    planId?: string | null;
-    postId?: string | null;
-    amountJpy: number;
-    kind: 'subscription' | 'one_time';
-    externalTxId?: string | null;
-  }) {
+  async createPaymentWithShare(params) {
     const {
       userId,
       creatorId,
@@ -292,29 +319,9 @@ export class PaymentsService {
       externalTxId,
     } = params;
 
-    // プランの分配率を取得（デフォルト80/20）
-    let creatorShare = 80;
-    let platformShare = 20;
+    const feeSetting = await this.getFeeSetting();
+    const split = this.splitByFeeSetting(amountJpy, feeSetting);
 
-    if (planId) {
-      const plan = await this.prisma.plan.findUnique({
-        where: { id: planId },
-        select: {
-          creatorSharePercent: true,
-          platformSharePercent: true,
-        },
-      });
-      if (plan) {
-        creatorShare = plan.creatorSharePercent;
-        platformShare = plan.platformSharePercent;
-      }
-    }
-
-    // 分配計算
-    const creatorAmountJpy = Math.floor((amountJpy * creatorShare) / 100);
-    const platformAmountJpy = amountJpy - creatorAmountJpy;
-
-    // Payment レコード作成
     return this.prisma.payment.create({
       data: {
         userId,
@@ -326,10 +333,54 @@ export class PaymentsService {
         externalTxId: externalTxId ?? null,
         paymentStatus: 'paid',
         paidAt: new Date(),
-        creatorAmountJpy,
-        platformAmountJpy,
+
+        // ★ FeeSetting 基準の取り分
+        creatorAmountJpy: split.creatorAmountJpy,
+        platformAmountJpy: split.managerAmountJpy + split.shopAmountJpy,
+
+        managerPercent: feeSetting.managerPercent,
+        shopPercent:    feeSetting.shopPercent,
+        creatorPercent: feeSetting.creatorPercent,
       },
     });
   }
-  
+
+  /**
+   * DB から現在の手数料設定を取得
+   * 1 レコードしかない前提。なければデフォルト 20 / 10 / 70
+   */
+  private async getFeeSetting(): Promise<FeeSetting> {
+    const fs = await this.prisma.feeSetting.findFirst();
+    if (fs) return fs;
+
+    // まだレコードが無い場合のフェイルセーフ
+    return {
+      id: 1,
+      managerPercent: 20,
+      shopPercent: 10,
+      creatorPercent: 70,
+      updatedAt: new Date(),
+    } as FeeSetting;
+  }
+
+  /**
+   * 合計金額を 手数料設定に応じて 3 つに分配する
+   * 端数はクリエイター側に寄せる
+   */
+  private splitByFeeSetting(
+    totalJpy: number,
+    setting: FeeSetting,
+  ) {
+    const manager = Math.floor((totalJpy * setting.managerPercent) / 100);
+    const shop = Math.floor((totalJpy * setting.shopPercent) / 100);
+
+    // 端数はクリエイター側に寄せる
+    const creator = totalJpy - manager - shop;
+
+    return {
+      managerAmountJpy: manager,
+      shopAmountJpy: shop,
+      creatorAmountJpy: creator,
+    };
+  }    
 }
