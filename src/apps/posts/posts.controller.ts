@@ -26,6 +26,7 @@ import { extname } from 'path';
 import sharp from 'sharp';
 import { promises as fs } from 'fs';
 import { UpdatePostDto } from './dto/update-post.dto';
+import { Role } from '@prisma/client';
 
 @Controller('posts')
 export class PostsController {
@@ -54,7 +55,10 @@ export class PostsController {
       throw new ForbiddenException('ログインが必要です');
     }
 
-    const posts = await this.postsService.getMyPosts(user.id);
+    const posts = await this.postsService.getMyPosts(
+      user.id,
+      user.role as Role,
+    );
     return { items: posts };
   }
 

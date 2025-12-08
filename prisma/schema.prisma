@@ -17,6 +17,7 @@ enum Role {
   fan
   creator
   admin
+  sub_admin
 }
 
 enum KycStatus {
@@ -343,6 +344,14 @@ model WebhookEvent {
   processedAt    DateTime?
 
   @@index([provider, eventType, createdAt])
+}
+
+model FeeSetting {
+  id             Int      @id @default(1)
+  managerPercent Int
+  shopPercent    Int
+  creatorPercent Int
+  updatedAt      DateTime @updatedAt
 }
 
 model Report {

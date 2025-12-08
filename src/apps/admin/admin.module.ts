@@ -7,14 +7,17 @@ import { AdminPostsController } from './admin.posts.controller';
 import { AdminReportsController } from './admin-reports.controller';
 import { AdminSummaryController } from './admin-summary.controller';
 import { AdminService } from './admin.service';
+import { AdminSettingsController } from './admin-settings.controller';
+import { AdminUsersController } from './admin-users.controller';
 
 @Module({
   controllers: [
     AdminCreatorsController, 
-    AdminCreatorsController, 
     AdminPostsController,
     AdminReportsController,
     AdminSummaryController,
+    AdminSettingsController,
+    AdminUsersController,
   ],
   providers: [
     PrismaService,

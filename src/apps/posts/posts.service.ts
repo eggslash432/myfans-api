@@ -252,11 +252,14 @@ export class PostsService {
   /**
    * creator の自分の投稿一覧
    */
-  async getMyPosts(userId: string) {
+  async getMyPosts(userId: string, role: Role) {
+    const where =
+      role === Role.admin
+        ? { isOfficial: true }  // ★ admin は運営公式投稿だけ
+        : { creatorId: userId }; // ★ creator は自分の投稿
+
     return await this.prisma.post.findMany({
-      where: { 
-        creatorId: userId,
-      },
+      where: where,
       orderBy: { createdAt: 'desc' },
       include: {
         media: true,

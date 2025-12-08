@@ -19,7 +19,7 @@ export enum PublishedStatusEnum {
 }
 
 // 必要なら以下も全部 TS で定義
-export enum RoleEnum { fan='fan', creator='creator', admin='admin' }
+export enum RoleEnum { fan='fan', creator='creator', admin='admin', sub_admin = 'sub_admin' }
 export enum MediaTypeEnum { image='image', video='video', audio='audio' }
 export enum PaymentKindEnum { subscription='subscription', one_time='one_time' }
 export enum SubStatusEnum {
