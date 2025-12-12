@@ -9,11 +9,15 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminOnlyGuard } from '../access-control/admin-only.guard';
+import { AdminService } from './admin.service';
 
 @Controller('admin/settings')
 @UseGuards(JwtAuthGuard, AdminOnlyGuard)
 export class AdminSettingsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly admin: AdminService,
+  ) {}
 
   @Get('fees')
   async getFees() {
@@ -49,4 +53,16 @@ export class AdminSettingsController {
 
     return setting;
   }
+
+  @Get('upload')
+  async getUpload() {
+    return this.admin.getUploadSetting();
+  }
+
+  @Patch('upload')
+  async updateUpload(
+    @Body() body: { maxFileSizeMb?: number; maxFiles?: number },
+  ) {
+    return this.admin.updateUploadSetting(body);
+  }  
 }

@@ -44,4 +44,22 @@ export class AdminService {
       pendingReports,
     };
   }
+  
+  async getUploadSetting() {
+    return this.prisma.uploadSetting.upsert({
+      where: { id: 1 },
+      update: {},
+      create: { id: 1, maxFileSizeMb: 20, maxFiles: 10 },
+    });
+  }
+
+  async updateUploadSetting(dto: { maxFileSizeMb?: number; maxFiles?: number }) {
+    return this.prisma.uploadSetting.update({
+      where: { id: 1 },
+      data: {
+        ...(dto.maxFileSizeMb != null ? { maxFileSizeMb: dto.maxFileSizeMb } : {}),
+        ...(dto.maxFiles != null ? { maxFiles: dto.maxFiles } : {}),
+      },
+    });
+  }  
 }
