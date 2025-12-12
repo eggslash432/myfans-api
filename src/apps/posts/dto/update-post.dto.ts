@@ -45,6 +45,10 @@ export class UpdatePostMediaDto {
 export class UpdatePostDto {
   @IsOptional()
   @IsString()
+  planId?: string | null;
+
+  @IsOptional()
+  @IsString()
   title?: string;
 
   @IsOptional()

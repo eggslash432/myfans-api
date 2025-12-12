@@ -159,45 +159,100 @@ export class PostsService {
   async updateMyPost(userId: string, postId: string, dto: UpdatePostDto) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
+      select: {
+        id: true,
+        creatorId: true,
+        visibility: true,
+        planId: true,
+        priceJpy: true,
+        publishedStatus: true,
+        publishedAt: true,
+        isOfficial: true,
+      },
     });
 
     if (!post || post.creatorId !== userId) {
-      // 投稿が存在しない or 他の人の投稿
       throw new ForbiddenException('この投稿は編集できません');
     }
 
-    const nextPublishedStatus =
-      dto.publishedStatus ?? post.publishedStatus;
-
-    // publishedAt の扱い
-    let nextPublishedAt = post.publishedAt;
     const wasPublished = post.publishedStatus === PublishedStatus.published;
-    const willBePublished = nextPublishedStatus === PublishedStatus.published;
 
-    if (!wasPublished && willBePublished) {
-      // 初めて公開 → 今の時間
-      nextPublishedAt = new Date();
-    } else if (wasPublished && !willBePublished) {
-      // 公開→下書き/非公開に戻した → null でもOK（仕様に合わせて）
-      nextPublishedAt = null;
-    }
-
+    // -----------------------------
+    // 公開済みは「本文系だけ」編集可
+    // -----------------------------
     const data: any = {};
 
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.body !== undefined) data.body = dto.body;
-    if (dto.visibility !== undefined) data.visibility = dto.visibility;
 
-    if (dto.priceJpy !== undefined) {
-      data.priceJpy = dto.priceJpy;
-    }
-
+    // publishedStatus の変更は許可（必要ならここも制限してOK）
     if (dto.publishedStatus !== undefined) {
-      data.publishedStatus = nextPublishedStatus;
+      const next = dto.publishedStatus as PublishedStatus;
+
+      // publishedAt の扱い
+      let nextPublishedAt = post.publishedAt;
+      const willBePublished = next === PublishedStatus.published;
+
+      if (!wasPublished && willBePublished) nextPublishedAt = new Date();
+      if (wasPublished && !willBePublished) nextPublishedAt = null;
+
+      data.publishedStatus = next;
       data.publishedAt = nextPublishedAt;
     }
 
-    const updated = await this.prisma.post.update({
+    if (wasPublished) {
+      // 公開済みはここで打ち切り（visibility/price/planId は触らせない）
+      return await this.prisma.post.update({
+        where: { id: postId },
+        data,
+        select: {
+          id: true,
+          title: true,
+          body: true,
+          visibility: true,
+          planId: true,
+          priceJpy: true,
+          publishedStatus: true,
+          publishedAt: true,
+          createdAt: true,
+        },
+      });
+    }
+
+    // -----------------------------
+    // 下書き/非公開は販売条件も編集可
+    // -----------------------------
+    if (dto.visibility !== undefined) {
+      data.visibility = dto.visibility;
+    }
+
+    // visibility/price/planId 整合性チェック
+    const nextVisibility = (dto.visibility ?? post.visibility) as Visibility;
+
+    if (nextVisibility === Visibility.plan) {
+      const nextPlanId = (dto as any).planId ?? post.planId;
+      if (!nextPlanId) {
+        throw new ForbiddenException('planId が必要です');
+      }
+      data.planId = nextPlanId;
+      data.priceJpy = null; // plan は price 使わないならクリア
+    }
+
+    if (nextVisibility === Visibility.paid_single) {
+      const nextPrice = dto.priceJpy ?? post.priceJpy;
+      if (!nextPrice) {
+        throw new ForbiddenException('価格を設定してください');
+      }
+      data.priceJpy = nextPrice;
+      data.planId = null; // PPV は planId 使わないならクリア
+    }
+
+    if (nextVisibility === Visibility.free) {
+      data.planId = null;
+      data.priceJpy = null;
+    }
+
+    return await this.prisma.post.update({
       where: { id: postId },
       data,
       select: {
@@ -205,15 +260,15 @@ export class PostsService {
         title: true,
         body: true,
         visibility: true,
+        planId: true,
         priceJpy: true,
         publishedStatus: true,
         publishedAt: true,
         createdAt: true,
       },
     });
-
-    return updated;
   }
+
 
   async attachMediaToPost(
     postId: string,
