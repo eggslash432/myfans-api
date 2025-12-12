@@ -1,5 +1,4 @@
 // src/apps/posts/posts.service.ts
-
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -55,18 +54,19 @@ export class PostsService {
         planId: planId || null,
         priceJpy: priceJpy || null,
         publishedStatus: PublishedStatus.published,
-        isOfficial: isOfficial,
+        isOfficial: user?.role === Role.admin,
       },
     });
 
-    // メディアがある場合まとめて保存
+    // ★ dto.media がある場合（URLを保存するだけ）
     if (media?.length) {
       await this.prisma.postMedia.createMany({
         data: media.map((m: any, idx: number) => ({
           postId: post.id,
           url: m.url,
-          mediaType: m.mediaType as MediaType, // "image" | "video" | "audio" を期待
+          mediaType: m.mediaType as MediaType,
           sortOrder: idx,
+          isSample: !!m.isSample,
         })),
       });
     }
@@ -77,14 +77,15 @@ export class PostsService {
   /**
    * 投稿の詳細取得
    * - 閲覧可能判定つき
-   * - 閲覧できなくても 200 で返し、canView=false にする
+   * - 閲覧できなくても 200 で返し、canViewMain=false にする
+   * - サンプル動画(isSample=true)はプラン関係なく閲覧可
    */
   async getPostDetail(postId: string, viewerId: string | null) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
       include: {
         creator: true,
-        media: true,
+        media: true, // PostMedia に isSample フィールドがある前提
       },
     });
 
@@ -92,18 +93,20 @@ export class PostsService {
       throw new NotFoundException('投稿が見つかりません');
     }
 
-    let canView = false;
+    // ===== 本編の閲覧可否（canViewMain） =====
+    let canViewMain = false;
 
     if (post.visibility === Visibility.free) {
-      canView = true;
+      // 無料投稿は誰でもOK
+      canViewMain = true;
     } else if (viewerId && post.creatorId === viewerId) {
-      canView = true;
+      // 投稿者本人は常に閲覧可
+      canViewMain = true;
     } else if (viewerId && post.visibility === Visibility.plan) {
+      // プラン限定 → 購読中か？
       const activeSub = await this.prisma.subscription.findFirst({
         where: {
-          // viewerId は string | null なので、null のときは undefined にする
           userId: viewerId ?? undefined,
-          // post.creatorId も string | null 扱いになっているので同じく
           creatorId: post.creatorId ?? undefined,
           status: SubStatus.active,
           currentPeriodEnd: { gt: new Date() },
@@ -111,13 +114,14 @@ export class PostsService {
       });
 
       if (activeSub) {
-        canView = true;
+        canViewMain = true;
       }
     } else if (viewerId && post.visibility === Visibility.paid_single) {
+      // PPV → postAccess があるか？
       const access = await this.prisma.postAccess.findUnique({
         where: {
           userId_postId: {
-            userId: viewerId as string,    // ★ ここもキャスト
+            userId: viewerId as string,
             postId,
           },
         },
@@ -127,17 +131,27 @@ export class PostsService {
         access &&
         (!access.expiresAt || access.expiresAt > new Date())
       ) {
-        canView = true;
+        canViewMain = true;
       }
     }
 
+    // ===== サンプル動画の閲覧可否（canViewSample） =====
+    // 今回の仕様では「サンプル動画が存在すれば、誰でも閲覧可」にする
+    const hasSampleMedia = post.media.some((m) => m.isSample === true);
+    const canViewSample = hasSampleMedia;
+
+    // フロント用に追加情報を付けて返す
     return {
       ...post,
-      canView,
-      isLocked: !canView,
+      // 既存互換
+      canView: canViewMain,
+      isLocked: !canViewMain,
+
+      // 新しいフラグ
+      canViewMain,
+      canViewSample,
     };
   }
-
 
   /**
    * creator の自分の投稿編集
@@ -205,48 +219,44 @@ export class PostsService {
     postId: string,
     userId: string,
     files: Express.Multer.File[],
+    sampleIdx?: number,
   ) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
       select: { id: true, creatorId: true },
     });
 
-    if (!post) {
-      throw new NotFoundException('投稿が見つかりません');
-    }
+    if (!post) throw new NotFoundException('投稿が見つかりません');
     if (post.creatorId !== userId) {
       throw new ForbiddenException('自分の投稿のみ編集できます');
     }
 
-    // mimetype から MediaType を判定（image / video / audio）
+    const existingCount = await this.prisma.postMedia.count({
+      where: { postId }, // ← ここは postId 引数があるのでOK
+    });
+
     await this.prisma.postMedia.createMany({
       data: files.map((f, idx) => {
         const mime = f.mimetype ?? '';
-        let mediaType: MediaType;
-
-        if (mime.startsWith('video/')) {
-          mediaType = MediaType.video;
-        } else if (mime.startsWith('audio/')) {
-          mediaType = MediaType.audio;
-        } else {
-          mediaType = MediaType.image;
-        }
+        const mediaType =
+          mime.startsWith('video/') ? MediaType.video :
+          mime.startsWith('audio/') ? MediaType.audio :
+          MediaType.image;
 
         return {
           postId,
           url: `/uploads/posts/${f.filename}`,
           mediaType,
-          sortOrder: idx,
+          sortOrder: existingCount + idx,
+          isSample: sampleIdx === idx,
         };
       }),
     });
 
-    const created = await this.prisma.postMedia.findMany({
+    return this.prisma.postMedia.findMany({
       where: { postId },
       orderBy: { sortOrder: 'asc' },
     });
-
-    return created;
   }
 
   /**

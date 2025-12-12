@@ -26,6 +26,10 @@ export class CreatePostMediaDto {
   @IsInt()
   @IsOptional()
   sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isSample?: boolean;
 }
 
 export class CreatePostDto {

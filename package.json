@@ -63,7 +63,7 @@
     "@types/express": "^5.0.3",
     "@types/jest": "^30.0.0",
     "@types/multer": "^2.0.0",
-    "@types/node": "^24.8.1",
+    "@types/node": "^24.10.3",
     "@types/sharp": "^0.31.1",
     "@types/supertest": "^6.0.3",
     "dotenv-cli": "^10.0.0",
