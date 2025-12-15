@@ -16,6 +16,7 @@ import {
   BadRequestException,
   PayloadTooLargeException,
   Delete,
+  Query,
 } from '@nestjs/common';
 
 import { PostsService } from './posts.service';
@@ -53,11 +54,25 @@ export class PostsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  async myPosts(@Req() req: any) {
-    const user = req.user as UserJwt | undefined;
-    if (!user?.id) throw new ForbiddenException('ログインが必要です');
+  async getMyPosts(@Req() req: any) {
+    const userId = req.user?.id;
+    if (!userId) throw new UnauthorizedException('JWTが無効です');
 
-    const posts = await this.postsService.getMyPosts(user.id, user.role as Role);
+    const posts = await this.prisma.post.findMany({
+      where: { creatorId: userId }, // ← あなたのDB設計だと creatorId=userId
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        visibility: true,
+        priceJpy: true,
+        publishedStatus: true,
+        publishedAt: true,
+        createdAt: true,
+        creatorId: true,
+      },
+    });
+
     return { items: posts };
   }
 
@@ -214,5 +229,11 @@ export class PostsController {
     const user = req.user as UserJwt | undefined;
     if (!user?.id) throw new UnauthorizedException('ログインが必要です');
     return this.postDelete.deleteAsCreator(id, user.id);
+  }  
+
+  @Get()
+  list(@Query('official') official?: string) {
+    const onlyOfficial = official === '1' || official === 'true';
+    return this.postsService.listPublic({ onlyOfficial });
   }  
 }

@@ -75,28 +75,4 @@ export class AuthController {
     if (!user) throw new UnauthorizedException();
     return user; // ← payloadは信用せず、DBのroleを返す
   }
-
-  @Get('me/summary')
-  @UseGuards(JwtAuthGuard)
-  async meSummary(@Req() req: any) {
-    const userId = String((req.user as any).id);
-
-    // まずは最低限のサマリ（後で拡張すればOK）
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, email: true, role: true },
-    });
-    if (!user) throw new UnauthorizedException();
-
-    return {
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      // ここから下は、今は仮で 0。後で Prisma で集計して埋める
-      subscriberCount: 0,
-      postCount: 0,
-      salesTotalJpy: 0,
-      balanceJpy: 0,
-    };
-  }  
 }

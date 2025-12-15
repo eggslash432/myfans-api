@@ -124,12 +124,19 @@ export class CreatorsController {
     const posts = await this.prisma.post.findMany({
       where: { creatorId: userId },
       orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        visibility: true,
+        priceJpy: true,
+        publishedStatus: true,
+        publishedAt: true,
+        createdAt: true,
+        creatorId: true,
+      },
     });
 
-    return {
-      published: posts.filter(p => p.publishedStatus === PublishedStatus.published),
-      drafts: posts.filter(p => p.publishedStatus !== PublishedStatus.published),
-    };
+    return { items: posts };
   }
 
   @UseGuards(JwtAuthGuard)

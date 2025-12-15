@@ -29,7 +29,7 @@ export class PostsService {
       select: { role: true },
     });
 
-    const isOfficial = user?.role === Role.admin;  
+    const isOfficial = user?.role === 'admin' ? true : false; 
     
     if (user?.role === Role.admin && visibility !== Visibility.free) {
       throw new ForbiddenException('管理者は無料投稿のみ作成できます');
@@ -47,14 +47,15 @@ export class PostsService {
 
     const post = await this.prisma.post.create({
       data: {
-        creatorId: userId,
+        creatorId: user?.role === 'creator' ? userId : null,
         title,
         body,
         visibility,
         planId: planId || null,
         priceJpy: priceJpy || null,
         publishedStatus: PublishedStatus.published,
-        isOfficial: user?.role === Role.admin,
+        isOfficial: isOfficial,
+        
       },
     });
 
@@ -395,4 +396,15 @@ export class PostsService {
       },
     });
   }
+
+  async listPublic({ onlyOfficial }: { onlyOfficial: boolean }) {
+    return this.prisma.post.findMany({
+      where: {
+        publishedStatus: 'published',
+        ...(onlyOfficial ? { isOfficial: true } : {}),
+      },
+      orderBy: { publishedAt: 'desc' },
+      take: 20,
+    });
+  }  
 }

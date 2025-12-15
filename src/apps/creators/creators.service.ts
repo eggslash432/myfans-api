@@ -215,15 +215,28 @@ export class CreatorsService {
     return account.id;
   }  
 
+  private frontendOrigin() {
+    return (
+      process.env.APP_ORIGIN ||
+      process.env.FRONTEND_URL ||
+      this.config.get<string>("APP_ORIGIN") ||
+      this.config.get<string>("FRONTEND_URL") ||
+      "http://localhost:5173"
+    );
+  }
+
   async createKycLink(stripeAccountId: string) {
+    const origin = this.frontendOrigin();
+
     const link = await this.stripe.accountLinks.create({
       account: stripeAccountId,
-      refresh_url: process.env.FRONTEND_URL + "/kyc/refresh",
-      return_url: process.env.FRONTEND_URL + "/kyc/complete",
+      refresh_url: `${origin}/creator/payouts?kyc=refresh`,
+      return_url: `${origin}/creator/payouts?kyc=complete`,
       type: "account_onboarding",
     });
+
     return link.url;
-  }  
+  }
 
   /**
    * クリエイター本人用のシンプル売上サマリー
