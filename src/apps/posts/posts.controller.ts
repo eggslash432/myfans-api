@@ -15,6 +15,7 @@ import {
   UnauthorizedException,
   BadRequestException,
   PayloadTooLargeException,
+  Delete,
 } from '@nestjs/common';
 
 import { PostsService } from './posts.service';
@@ -29,12 +30,14 @@ import { promises as fs } from 'fs';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PostDeleteService } from './post-delete.service';
 
 @Controller('posts')
 export class PostsController {
   constructor(
     private readonly postsService: PostsService,
     private readonly prisma: PrismaService,
+    private readonly postDelete: PostDeleteService,
   ) {}
 
   @Get()
@@ -42,6 +45,11 @@ export class PostsController {
     const items = await this.postsService.getPublicFeed();
     return { items };
   }
+
+  @Get('public/admin')
+  async getAdminPosts() {
+    return this.postsService.getAdminPosts(5);
+  }    
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
@@ -200,8 +208,11 @@ export class PostsController {
     return this.postsService.updateMyPost(userId, id, dto);
   }
 
-  @Get('public/admin')
-  async getAdminPosts() {
-    return this.postsService.getAdminPosts(5);
-  }
+  @UseGuards(JwtAuthGuard)
+  @Delete('me/:id')
+  async deleteMyPost(@Req() req: any, @Param('id') id: string) {
+    const user = req.user as UserJwt | undefined;
+    if (!user?.id) throw new UnauthorizedException('ログインが必要です');
+    return this.postDelete.deleteAsCreator(id, user.id);
+  }  
 }

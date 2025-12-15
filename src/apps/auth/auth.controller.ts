@@ -99,13 +99,4 @@ export class AuthController {
       balanceJpy: 0,
     };
   }  
-
-  @UseGuards(JwtAuthGuard)
-  @Patch('change-password')
-  async changePassword(
-    @Req() req: { user: UserJwt },
-    @Body() dto: ChangePasswordDto,
-  ) {
-    return this.authService.changePassword(req.user.id, dto);
-  }  
 }

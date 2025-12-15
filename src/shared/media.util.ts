@@ -1,3 +1,5 @@
+// api/src/shared/media.util.ts
+
 /**
  * MEDIA_BASE_URL を正規化（末尾スラッシュ除去）
  */

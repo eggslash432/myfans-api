@@ -3,10 +3,14 @@
 import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { JwtPayload } from 'src/shared/types';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor() {
+  constructor(
+    private readonly prisma: PrismaService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKey: process.env.JWT_SECRET,
@@ -14,22 +18,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(
-    payload: { 
-      sub: string; 
-      email: string; 
-      role: string;
-      creatorId: string;
-    }
-  ) {
-    console.log('JWT payload in validate:', payload);
+  async validate(payload: JwtPayload) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+    });
 
-    // sub を id にマッピングして req.user に載せる
-    return { 
-      id: payload.sub,
-      email: payload.email,
-      role: payload.role,
-      creatorId: payload.creatorId,
-    };
+    return user; // ← これが req.user になる
   }
 }

@@ -9,10 +9,22 @@ import { S3Service } from '../storage/s3.service';
 import { HelpersModule } from '../helpers/helpers.module';
 import { PostsFetchController } from './posts.fetch.controller';
 import { PostsReportController } from './posts.report.controller';
+import { PostDeleteService } from './post-delete.service';
 
 @Module({
-  imports: [AccessControlModule, HelpersModule],
-  providers: [PostsService, PrismaService, S3Service],
+  imports: [
+    AccessControlModule, 
+    HelpersModule,
+  ],
+  exports: [
+    PostDeleteService
+  ],
+  providers: [
+    PostsService, 
+    PrismaService, 
+    S3Service,
+    PostDeleteService,
+  ],
   controllers: [
     PostsController,
     PostsCreateController, 

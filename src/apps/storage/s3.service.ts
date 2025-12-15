@@ -69,23 +69,42 @@ export class S3Service {
     const uniq = Array.from(new Set(keys)).filter(Boolean);
     if (uniq.length === 0) return;
 
-    // 1件だけなら単体削除
-    if (uniq.length === 1) {
-      await this.client.send(
-        new DeleteObjectCommand({
-          Bucket: bucket,
-          Key: uniq[0],
-        }),
-      );
-      return;
+    // DeleteObjects は最大 1000 件/回
+    const chunks: string[][] = [];
+    for (let i = 0; i < uniq.length; i += 1000) {
+      chunks.push(uniq.slice(i, i + 1000));
     }
 
-    // 複数件まとめて削除（最大1000/回）
-    await this.client.send(
-      new DeleteObjectsCommand({
-        Bucket: bucket,
-        Delete: { Objects: uniq.map((k) => ({ Key: k })), Quiet: true },
-      }),
-    );
+    for (const chunk of chunks) {
+      if (chunk.length === 1) {
+        await this.client.send(
+          new DeleteObjectCommand({
+            Bucket: bucket,
+            Key: chunk[0],
+          }),
+        );
+        continue;
+      }
+
+      const res = await this.client.send(
+        new DeleteObjectsCommand({
+          Bucket: bucket,
+          Delete: {
+            Objects: chunk.map((Key) => ({ Key })),
+            Quiet: true,
+          },
+        }),
+      );
+
+      // 失敗が混ざってたら止める（DB削除しない）
+      const errors = res.Errors ?? [];
+      if (errors.length > 0) {
+        const msg = errors
+          .map((e) => `${e.Key ?? '(unknown)'}: ${e.Message ?? e.Code ?? 'error'}`)
+          .join('\n');
+        throw new Error(`S3 delete failed:\n${msg}`);
+      }
+    }
   }
+
 }
