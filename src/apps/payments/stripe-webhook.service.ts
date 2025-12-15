@@ -332,7 +332,9 @@ export class StripeWebhookService {
 
     // 3) Payment 作成（重複防止：externalTxId を invoice.id で一意にするのが理想）
     const amountJpy =
-      typeof invoice.amount_paid === 'number' ? invoice.amount_paid : 0;
+      typeof invoice.amount_paid === 'number' && invoice.amount_paid > 0
+        ? invoice.amount_paid
+        : (typeof invoice.total === 'number' ? invoice.total : 0);
 
     if (amountJpy) {
       await this.payments.createPaymentWithShareIdempotentV2({

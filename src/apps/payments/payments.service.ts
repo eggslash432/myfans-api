@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/apps/prisma/prisma.service';
 import Stripe from 'stripe';
 import { FeeSetting, Prisma } from '@prisma/client';
+import { CreatePaymentWithShareArgs } from 'src/shared/types';
 
 @Injectable()
 export class PaymentsService {
@@ -157,7 +158,12 @@ export class PaymentsService {
    * - Post の priceJpy を使って支払い
    * - metadata に userId / postId / creatorId を載せて Webhook 側で PostAccess 付与
    */
-  async createCheckoutForPost(userId: string, postId: string) {
+  async createCheckoutForPost(
+    userId: string,
+    postId: string,
+    successUrlIn?: string,
+    cancelUrlIn?: string,
+  ) {
     const appOrigin =
       this.config.get<string>('appOrigin') ??
       process.env.APP_ORIGIN ??
@@ -347,29 +353,30 @@ export class PaymentsService {
   }  
 
   // Payment + 分配（Creator / Platform）を externalTxId で冪等に作成
-  async createPaymentWithShareIdempotentV2(params: {
-    userId: string;
-    creatorId: string;
-    planId: string | null;
-    postId: string | null;
-    amountJpy: number;
-    kind: 'subscription' | 'one_time';
-    externalTxId: string; // ★必須にする（ここが冪等キー）
-  }) {
-    const { externalTxId, ...rest } = params;
+  async createPaymentWithShareIdempotentV2(args: CreatePaymentWithShareArgs) {
+    const {
+      userId,
+      creatorId,
+      planId,
+      postId,
+      amountJpy,
+      kind,
+      externalTxId,
+    } = args;
 
     return this.createPaymentWithShareIdempotent(externalTxId, async () => {
-      // 分配計算は既存ロジックを再利用（重複実装しない）
       const feeSetting = await this.getFeeSetting();
-      const split = this.splitByFeeSetting(rest.amountJpy, feeSetting);
+      const split = this.splitByFeeSetting(amountJpy, feeSetting);
 
+      // PaymentCreateInput を「connect」ではなく “素のカラム” で作る（スキーマ差異に強い）
+      // ※Payment モデルが userId/creatorId/planId/postId を持ってる前提
       return {
-        user: { connect: { id: rest.userId } },
-        creator: { connect: { userId: rest.creatorId } },
-        ...(rest.planId ? { plan: { connect: { id: rest.planId } } } : {}),
-        ...(rest.postId ? { post: { connect: { id: rest.postId } } } : {}),
-        amountJpy: rest.amountJpy,
-        kind: rest.kind,
+        userId,
+        creatorId,
+        planId: planId ?? undefined,
+        postId: postId ?? undefined,
+        amountJpy,
+        kind,
         paymentStatus: 'paid',
         paidAt: new Date(),
 
@@ -379,9 +386,9 @@ export class PaymentsService {
         managerPercent: feeSetting.managerPercent,
         shopPercent: feeSetting.shopPercent,
         creatorPercent: feeSetting.creatorPercent,
-      };
+      } as Prisma.PaymentCreateInput;
     });
-  }  
+  }
 
   /**
    * Payment + 分配（Creator / Platform）を作成する内部ヘルパー

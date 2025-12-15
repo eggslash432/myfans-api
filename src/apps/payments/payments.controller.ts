@@ -1,4 +1,4 @@
-// src/apps/payments/payments.controller.ts
+// api/src/apps/payments/payments.controller.ts
 
 import {
   Body,
@@ -8,18 +8,21 @@ import {
   BadRequestException,
   UnauthorizedException,
   UseGuards,
+  Param,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PaymentsService } from './payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCheckoutValidatedDto } from './dto/create-checkout.dto';
 import { UserJwt } from 'src/shared/types';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('payments')
 export class PaymentsController {
   constructor(
     private readonly payments: PaymentsService,
     private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -36,7 +39,12 @@ export class PaymentsController {
     const user = req.user as UserJwt | undefined;
     if (!user?.id) {
       throw new UnauthorizedException('Unauthenticated');
-    }  
+    }
+
+    const successUrl =
+      dto.successUrl ?? `${this.config.get('FRONT_ORIGIN')}/payments/success`;
+    const cancelUrl =
+      dto.cancelUrl ?? `${this.config.get('FRONT_ORIGIN')}/payments/cancel`;      
 
     const userId = user.id;
 
@@ -62,8 +70,8 @@ export class PaymentsController {
         userId,
         plan.creatorId,
         plan.id,
-        dto.successUrl,
-        dto.cancelUrl,
+        successUrl,
+        cancelUrl,
       );
 
       return { url };
@@ -82,17 +90,49 @@ export class PaymentsController {
       }
       if (!post.priceJpy) {
         throw new BadRequestException('post has no PPV price');
-      }
+      }    
 
+      // ✅ successUrl / cancelUrl を service に渡す
       const { url } = await this.payments.createCheckoutForPost(
         userId,
         post.id,
+        successUrl,
+        cancelUrl,
       );
 
       return { url };
     }
 
-    // （ここに来ることは DTO バリデーション上、本来ありえない）
     throw new BadRequestException('Either planId or postId is required');
   }
+
+  // controller の下に追加
+  @UseGuards(JwtAuthGuard)
+  @Post('ppv/:postId/checkout')
+  async createPpvCheckoutLegacy(
+    @Param('postId') postId: string,
+    @Req() req: any,
+  ) {
+    const user = req.user as UserJwt | undefined;
+    if (!user?.id) {
+      throw new UnauthorizedException('Unauthenticated');
+    }
+
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: { id: true, priceJpy: true },
+    });
+
+    if (!post) throw new BadRequestException('post not found');
+    if (!post.priceJpy) throw new BadRequestException('post has no PPV price');
+
+    const { url } = await this.payments.createCheckoutForPost(
+      user.id,
+      post.id,
+      undefined,
+      undefined,
+    );
+
+    return { url };
+  }  
 }

@@ -1,6 +1,6 @@
 // src/shared/types.ts
 
-import { Role } from "@prisma/client";
+import { PaymentKind, Role } from "@prisma/client";
 
 export type UserJwt = {
   id: string;               // userId
@@ -22,3 +22,13 @@ export type RequestWithUser = {
     role: Role;
   };
 } & Request;
+
+export type CreatePaymentWithShareArgs = {
+  userId: string;
+  creatorId: string;
+  planId: string | null;
+  postId: string | null;
+  amountJpy: number;
+  kind: PaymentKind;          // 'subscription' | 'one_time' など（あなたの Prisma に合わせる）
+  externalTxId: string;       // invoice.id / payment_intent.id を入れる
+};
