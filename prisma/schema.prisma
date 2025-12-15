@@ -7,7 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"  // ここは現状のDBに合わせる（mysql/sqliteなど）
+  provider = "postgresql" // ここは現状のDBに合わせる（mysql/sqliteなど）
   url      = env("DATABASE_URL")
 }
 
@@ -86,9 +86,15 @@ enum BillingInterval {
   year
 }
 
-enum PlanModalMode{
+enum PlanModalMode {
   create
   edit
+}
+
+enum CreatorApprovalStatus {
+  pending
+  approved
+  rejected
 }
 
 // ===== Core Users =====
@@ -103,7 +109,7 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  stripeCustomerId String?  
+  stripeCustomerId String?
 
   profile        Profile?
   creator        Creator?
@@ -113,6 +119,8 @@ model User {
   payments       Payment[]
   postAccesses   PostAccess[]
   reports        Report[]
+
+  notifications Notification[]
 
   @@index([role])
   @@index([isActive])
@@ -130,9 +138,16 @@ model Profile {
 
 // ===== Creator & KYC =====
 model Creator {
-  userId                  String   @id
-  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  publicName              String
+  userId     String @id
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicName String
+
+  approvalStatus CreatorApprovalStatus @default(pending)
+  approvedAt     DateTime?
+  rejectedAt     DateTime?
+  rejectReason   String?
+  applications   CreatorApplication[]
+
   bankAccount             Json?
   stripeAccountId         String?
   stripeKycStatus         String?
@@ -155,6 +170,20 @@ model Creator {
   @@index([isListed])
 }
 
+model CreatorApplication {
+  id      String  @id @default(uuid())
+  userId  String
+  creator Creator @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  publicName   String
+  bankAccount  Json?
+  status       CreatorApprovalStatus @default(pending)
+  rejectReason String?
+  createdAt    DateTime              @default(now())
+
+  @@index([userId, createdAt])
+}
+
 model KycSubmission {
   id         String    @id @default(uuid())
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -174,9 +203,9 @@ model KycSubmission {
 // ===== Plans & Subscriptions =====
 
 model Plan {
-  id              String          @id @default(uuid())
-  creator         Creator         @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
-  creatorId       String
+  id        String  @id @default(uuid())
+  creator   Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  creatorId String
 
   name            String
   priceJpy        Int
@@ -232,8 +261,8 @@ model Subscription {
 model Post {
   id              String          @id @default(uuid())
   creatorId       String?
-  creator         Creator?         @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
-  isOfficial      Boolean          @default(false) 
+  creator         Creator?        @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
+  isOfficial      Boolean         @default(false)
   title           String
   body            String?
   visibility      Visibility
@@ -271,7 +300,7 @@ model PostMedia {
 
 model UploadSetting {
   id            Int      @id @default(1)
-  maxFileSizeMb Int      @default(200)  // 例: 200MB
+  maxFileSizeMb Int      @default(200) // 例: 200MB
   maxFiles      Int      @default(10)
   updatedAt     DateTime @updatedAt
 }
@@ -299,7 +328,6 @@ model Favorite {
 
   @@id([userId, creatorId])
 }
-
 
 // ===== Payments & Operational =====
 model FeeSetting {
@@ -332,7 +360,7 @@ model Payment {
 
   managerPercent Int?
   shopPercent    Int?
-  creatorPercent Int?  
+  creatorPercent Int?
 
   @@index([paymentStatus, createdAt])
   @@index([creatorId])
@@ -372,8 +400,22 @@ model Report {
   userId    String
   reason    String?
   createdAt DateTime @default(now())
-  status    String @default("pending") // pending / reviewed / dismissed
+  status    String   @default("pending") // pending / reviewed / dismissed
 
-  post   Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
-  user   User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      String
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
 }

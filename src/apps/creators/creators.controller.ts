@@ -33,10 +33,18 @@ export class CreatorsController {
 
   @UseGuards(JwtAuthGuard)
   @Post('apply')
-  async applyCreator(@Req() req: any, @Body() dto: CreateCreatorDto) {
+  async applyCreator(
+    @Req() req,
+    @Body() dto: CreateCreatorDto,
+  ) {
     const userId = req.user.id;
+    if (!userId) {
+      throw new UnauthorizedException('JWTが無効です');
+    }
+
+    // ★ ロジックはすべて Service に任せる
     return this.creatorsService.applyCreator(userId, dto);
-  }  
+  }
 
   @Get()
   async list() {

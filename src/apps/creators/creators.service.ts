@@ -26,58 +26,58 @@ export class CreatorsService {
   }
 
   async applyCreator(userIdRaw: string, dto: CreateCreatorDto) {
-    const userId = userIdRaw;
+    const userId = String(userIdRaw);
 
-    if (!userId || typeof userId !== 'string') {
+    if (!userId) {
       throw new BadRequestException('invalid user id: ' + userIdRaw);
     }
 
-    // ユーザーが実在するか一応チェック
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new BadRequestException('user not found: ' + userId);
-    }  
+    }
 
-    // publicName を決定
     const publicName =
       dto.publicName ??
       dto.displayName ??
       user.email?.split('@')[0];
 
     if (!publicName) {
-      throw new BadRequestException(
-        'publicName または displayName を指定してください',
-      );
+      throw new BadRequestException('publicName または displayName を指定してください');
     }
 
-    console.log("applyCreator user=", userId);
-    console.log("dto=", dto);    
-
-    // Creator があれば更新、なければ新規作成
     const creator = await this.prisma.creator.upsert({
-      where: { userId }, // PK = userId
+      where: { userId },
       update: {
         publicName,
         bankAccount: dto.bankAccount ?? undefined,
+        // ★ 審査制：申請したら pending に戻す（再申請も同じ）
+        approvalStatus: 'pending' as any,
+        isListed: false,
+        rejectedAt: null,
+        rejectReason: null,
+        approvedAt: null,
       },
       create: {
         userId,
         publicName,
         bankAccount: dto.bankAccount ?? undefined,
-        isListed: false, 
+        isListed: false,
+        approvalStatus: 'pending' as any,
       },
     });
 
-    console.log("creator created/updated =", creator);
+    // ★ 履歴を1行追加（再申請含む）
+    await this.prisma.creatorApplication.create({
+      data: {
+        userId,
+        publicName,
+        bankAccount: dto.bankAccount ?? undefined,
+        status: 'pending' as any,
+      },
+    });    
 
-    // 一般ユーザーだけ role を creator に昇格させる
-    if (user.role === Role.fan) {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: { role: Role.creator },
-      });
-    }
-
+    // ★ 審査制：ここで role を上げない
     return creator;
   }
 
@@ -277,65 +277,49 @@ export class CreatorsService {
   async getMe(userIdRaw: string) {
     const userId = String(userIdRaw);
 
-    // ★ profile も一緒に取得する
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        profile: true,
-      },
+      include: { profile: true },
     });
-    if (!user) {
-      throw new NotFoundException('user not found: ' + userId);
-    }
+    if (!user) throw new NotFoundException('user not found: ' + userId);
 
-    // まず Creator があるかチェック
-    let creator = await this.prisma.creator.findUnique({ where: { userId } });
+    const creator = await this.prisma.creator.findUnique({ where: { userId } });
 
+    // ★ 未申請は null を返す（例外にしない）
     if (!creator) {
-      // まだ Creator 行が無ければ自動で作る（publicName は email の @ 前 を使用）
-      const publicName =
-        user.email?.split('@')[0] ??
-        'creator';
-
-      creator = await this.prisma.creator.create({
-        data: {
-          userId,
-          publicName,
-          isListed: false,
-        },
-      });
+      return {
+        isCreator: false,
+        approvalStatus: null,
+      };
     }
 
-    // ---- DB の既存値を初期値にする ----
+    // approvalStatus を前提に UI 分岐する
+    const approvalStatus = (creator as any).approvalStatus ?? 'pending';
+    const isApproved = approvalStatus === 'approved';
+
+    // ---- KYC 情報（承認済みクリエイターのみ更新するのが無難）----
+    // 審査前に Stripe 情報を取りに行きたくないなら、ここでガードできる：
+    // if (!isApproved) { Stripe 取得・DB update をスキップ }
     let stripeKycStatus = creator.stripeKycStatus ?? 'pending';
     let stripeChargesEnabled = creator.stripeChargesEnabled ?? false;
     let stripePayoutsEnabled = creator.stripePayoutsEnabled ?? false;
     let stripeKycDisabledReason = creator.stripeKycDisabledReason ?? null;
 
-    // DB は String? なので、画面用にパースして配列にしておく
     let stripeKycFieldsDue: string[] =
       creator.stripeKycFieldsDue ? creator.stripeKycFieldsDue.split(',') : [];
     let stripeKycErrors: any[] =
       creator.stripeKycErrors ? JSON.parse(creator.stripeKycErrors) : [];
 
-    // ---- Stripe アカウントIDがあるなら、最新状態を Stripe から取得 ----
-    if (creator.stripeAccountId) {
-      // ★ this.stripe を使う
-      const account = await this.stripe.accounts.retrieve(
-        creator.stripeAccountId,
-      );
-
-      // 型付きで requirements を取り出す
-      const req = account.requirements; // Stripe.Account.Requirements | null | undefined
+    if (isApproved && creator.stripeAccountId) {
+      const account = await this.stripe.accounts.retrieve(creator.stripeAccountId);
+      const req = account.requirements;
 
       const fieldsDueArray = [
         ...(req?.currently_due ?? []),
         ...(req?.past_due ?? []),
       ];
-
       const errorsArray = req?.errors ?? [];
 
-      // ステータス判定
       if (req?.disabled_reason) {
         stripeKycStatus = KycStatus.rejected;
         stripeKycDisabledReason = req.disabled_reason;
@@ -347,15 +331,12 @@ export class CreatorsService {
         stripeKycDisabledReason = null;
       }
 
-      // ← ここを「必ず boolean」にする
       stripeChargesEnabled = !!account.charges_enabled;
       stripePayoutsEnabled = !!account.payouts_enabled;
 
-      // 画面用
       stripeKycFieldsDue = fieldsDueArray;
       stripeKycErrors = errorsArray;
 
-      // ★ Prisma には String? で保存する
       await this.prisma.creator.update({
         where: { userId },
         data: {
@@ -363,27 +344,31 @@ export class CreatorsService {
           stripeChargesEnabled,
           stripePayoutsEnabled,
           stripeKycDisabledReason,
-          stripeKycFieldsDue:
-            fieldsDueArray.length > 0 ? fieldsDueArray.join(',') : null,
-          stripeKycErrors:
-            errorsArray.length > 0 ? JSON.stringify(errorsArray) : null,
+          stripeKycFieldsDue: fieldsDueArray.length ? fieldsDueArray.join(',') : null,
+          stripeKycErrors: errorsArray.length ? JSON.stringify(errorsArray) : null,
         },
       });
     }
 
-    // ---- フロントに返すデータ ----
     return {
-      isCreator: true,
+      // ★ isCreator = 管理者承認済みかどうか
+      isCreator: isApproved,
+
       publicName: creator.publicName,
-      // ★ ここで profile から bio / avatarUrl を返す
       bio: user.profile?.bio ?? '',
-      avatarUrl: user.profile?.avatarUrl ?? null,      
+      avatarUrl: user.profile?.avatarUrl ?? null,
+
+      // ★ 審査情報を返す（MyPageでここを見て分岐）
+      approvalStatus,
+      approvedAt: (creator as any).approvedAt ?? null,
+      rejectedAt: (creator as any).rejectedAt ?? null,
+      rejectReason: (creator as any).rejectReason ?? null,
+
       stripeAccountId: creator.stripeAccountId,
       stripeKycStatus,
       stripeChargesEnabled,
       stripePayoutsEnabled,
       stripeKycDisabledReason,
-      // ここは配列のまま返す（画面で使いやすいように）
       stripeKycFieldsDue,
       stripeKycErrors,
     };
