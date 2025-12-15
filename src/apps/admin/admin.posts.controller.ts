@@ -15,7 +15,7 @@ import { AdminOnlyGuard } from '../access-control/admin-only.guard';
 import { PublishedStatus } from '@prisma/client';
 
 @UseGuards(JwtAuthGuard, AdminOnlyGuard)
-@Controller('api/admin/posts')
+@Controller('admin/posts')
 export class AdminPostsController {
   constructor(private readonly prisma: PrismaService) {}
 
