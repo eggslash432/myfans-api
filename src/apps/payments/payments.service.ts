@@ -4,7 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/apps/prisma/prisma.service';
 import Stripe from 'stripe';
-import { FeeSetting } from '@prisma/client';
+import { FeeSetting, Prisma } from '@prisma/client';
 
 @Injectable()
 export class PaymentsService {
@@ -26,21 +26,20 @@ export class PaymentsService {
     this.stripe = new Stripe(secret, {});
   }
 
-// api/src/apps/payments/payments.service.ts
-
   /**
    * プラン購読の Checkout Session 作成
-   * - Plan.priceJpy / billingInterval から price_data を組み立てる
-   * - metadata に userId / planId / creatorId を載せて Webhook 側で利用
+   * - subscription モードでは payment_intent_data を渡せない（Stripe制約）
+   * - platform 手数料は subscription_data.application_fee_percent で渡す
+   * - transfer_data.destination で creator に送金
    */
   async createCheckoutForPlan(
     userId: string,
     creatorId: string,
     planId: string,
     successUrlIn?: string,
-    cancelUrlIn?: string,  
+    cancelUrlIn?: string,
   ) {
-    // creator の Stripe アカウントID を取得
+    // ① creator の Stripe アカウントID
     const creator = await this.prisma.creator.findUnique({
       where: { userId: creatorId },
       select: { stripeAccountId: true },
@@ -50,7 +49,7 @@ export class PaymentsService {
       throw new Error('クリエイターの Stripe アカウントが設定されていません');
     }
 
-    // プラン情報を取得（価格や名前も使う）
+    // ② プラン情報
     const plan = await this.prisma.plan.findUnique({
       where: { id: planId },
       select: {
@@ -59,7 +58,7 @@ export class PaymentsService {
         isActive: true,
         name: true,
         priceJpy: true,
-        billingInterval: true,
+        billingInterval: true, // 'month' | 'year' 想定
       },
     });
 
@@ -67,12 +66,12 @@ export class PaymentsService {
       throw new Error('プランが存在しないか停止されています');
     }
 
-    // 自分のプラン購読は禁止
+    // 自分のプラン購読は禁止（creatorId と userId の整合は実装方針次第だがここは維持）
     if (plan.creatorId === userId) {
       throw new Error('自分自身のプランは購読できません');
     }
 
-    // リクエストされた creatorId が DB のものと一致するか確認
+    // リクエストされた creatorId が plan.creatorId と一致するか
     if (creatorId !== plan.creatorId) {
       throw new Error('不正なクリエイターIDです');
     }
@@ -81,6 +80,7 @@ export class PaymentsService {
       throw new Error('プランの価格が正しく設定されていません');
     }
 
+    // ③ success/cancel URL（呼び出し元が渡したらそれを優先）
     const appOrigin =
       this.config.get<string>('appOrigin') ??
       process.env.APP_ORIGIN ??
@@ -96,26 +96,30 @@ export class PaymentsService {
       process.env.STRIPE_CANCEL_PATH ??
       '/mypage?purchase=cancel';
 
-    const successUrl = successUrlIn ?? `${appOrigin}${successPath}`;
-    const cancelUrl  = cancelUrlIn  ?? `${appOrigin}${cancelPath}`; 
+    const successUrl = successUrlIn ?? `${appOrigin}/payments/success?session_id={CHECKOUT_SESSION_ID}&from=plan&planId=${plan.id}`;
+    const cancelUrl  = cancelUrlIn  ?? `${appOrigin}/payments/cancel?from=plan&planId=${plan.id}`;
 
-    // Webhook 側で使う metadata
+    // ④ Webhook 用 metadata
     const metadata = {
       userId,
       planId: plan.id,
       creatorId,
     };
 
-    // Prisma の enum BillingInterval -> Stripe の interval 文字列に変換
-    const interval =
+    // ⑤ interval
+    const interval: 'month' | 'year' =
       plan.billingInterval === 'year' ? 'year' : 'month';
 
+    // ⑥ 手数料（platform取り分%）
     const feeSetting = await this.getFeeSetting();
+    const platformPercent = (feeSetting.managerPercent ?? 0) + (feeSetting.shopPercent ?? 0);
 
-    // Subscription の税別金額に FeeSetting を反映
-    const split = this.splitByFeeSetting(plan.priceJpy, feeSetting);
-    const applicationFee = split.managerAmountJpy + split.shopAmountJpy;      
+    if (platformPercent < 0 || platformPercent > 100) {
+      throw new Error(`FeeSetting percent invalid: platformPercent=${platformPercent}`);
+    }
 
+    // ⑦ Checkout Session 作成（subscription）
+    // ✅ subscription では payment_intent_data を渡さない！！
     const session = await this.stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [
@@ -130,26 +134,19 @@ export class PaymentsService {
         },
       ],
       subscription_data: {
-        metadata,
-        application_fee_percent: undefined, // 使用しない
+        metadata, // subscription metadata
+        application_fee_percent: platformPercent, // ← platformの取り分（%）
         transfer_data: {
-          // 定期課金も自動でクリエイターへ送る
-          destination: creator.stripeAccountId,
-        },
-      },
-      payment_intent_data: {
-        application_fee_amount: applicationFee,
-        transfer_data: {
-          destination: creator.stripeAccountId,
+          destination: creator.stripeAccountId, // ← creatorへ送金
         },
       },
       customer: await this.ensureStripeCustomer(userId),
       success_url: successUrl,
       cancel_url: cancelUrl,
-      metadata,
+      metadata, // session metadata（Webhook側で拾えるように）
     });
 
-    this.logger.log(`[CheckoutSession] Created: ${session.id}`);
+    this.logger.log(`[CheckoutSession] Created(subscription): ${session.id} planId=${plan.id}`);
 
     return { url: session.url };
   }
@@ -305,6 +302,86 @@ export class PaymentsService {
     return customer.id;
   }
 
+    /**
+   * invoice.id を冪等キーとして Payment を作成
+   * - webhook リトライでも二重作成されない
+   */
+  async ensurePaymentByInvoice(
+    invoiceId: string,
+    data: Prisma.PaymentCreateInput,
+  ) {
+    try {
+      return await this.prisma.payment.create({
+        data: {
+          ...data,
+          externalTxId: invoiceId,
+        },
+      });
+    } catch (e: any) {
+      // Unique violation (externalTxId)
+      if (e?.code === 'P2002') {
+        return await this.prisma.payment.findUnique({
+          where: { externalTxId: invoiceId },
+        });
+      }
+      throw e;
+    }
+  }
+
+  async createPaymentWithShareIdempotent(
+    externalTxId: string,
+    build: () => Promise<Prisma.PaymentCreateInput>, // 必要なら同期でもOK
+  ) {
+    try {
+      const data = await build();
+      return await this.prisma.payment.create({
+        data: { ...data, externalTxId },
+      });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        // externalTxId の unique で弾かれた = 既に作成済み
+        return await this.prisma.payment.findUnique({ where: { externalTxId } });
+      }
+      throw e;
+    }
+  }  
+
+  // Payment + 分配（Creator / Platform）を externalTxId で冪等に作成
+  async createPaymentWithShareIdempotentV2(params: {
+    userId: string;
+    creatorId: string;
+    planId: string | null;
+    postId: string | null;
+    amountJpy: number;
+    kind: 'subscription' | 'one_time';
+    externalTxId: string; // ★必須にする（ここが冪等キー）
+  }) {
+    const { externalTxId, ...rest } = params;
+
+    return this.createPaymentWithShareIdempotent(externalTxId, async () => {
+      // 分配計算は既存ロジックを再利用（重複実装しない）
+      const feeSetting = await this.getFeeSetting();
+      const split = this.splitByFeeSetting(rest.amountJpy, feeSetting);
+
+      return {
+        user: { connect: { id: rest.userId } },
+        creator: { connect: { userId: rest.creatorId } },
+        ...(rest.planId ? { plan: { connect: { id: rest.planId } } } : {}),
+        ...(rest.postId ? { post: { connect: { id: rest.postId } } } : {}),
+        amountJpy: rest.amountJpy,
+        kind: rest.kind,
+        paymentStatus: 'paid',
+        paidAt: new Date(),
+
+        creatorAmountJpy: split.creatorAmountJpy,
+        platformAmountJpy: split.managerAmountJpy + split.shopAmountJpy,
+
+        managerPercent: feeSetting.managerPercent,
+        shopPercent: feeSetting.shopPercent,
+        creatorPercent: feeSetting.creatorPercent,
+      };
+    });
+  }  
 
   /**
    * Payment + 分配（Creator / Platform）を作成する内部ヘルパー

@@ -1,5 +1,4 @@
-// src/apps/creators/creator-kyc.controller.ts
-
+// api/src/apps/creators/creator-kyc.controller.ts
 import {
   BadRequestException,
   Controller,
@@ -13,6 +12,7 @@ import { CreatorHelper } from '../helpers/creator.helper';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 import { UserJwt } from 'src/shared/types';
+import { KycStatus } from '@prisma/client';
 
 @Controller('creators/me/kyc')
 @UseGuards(JwtAuthGuard)
@@ -28,12 +28,10 @@ export class CreatorKycController {
     const secret =
       process.env.STRIPE_SECRET_KEY ||
       this.config.get<string>('stripeSecretKey');
-    if (!secret) {
-      throw new Error('STRIPE_SECRET_KEY is not set');
-    }
-    this.stripe = new Stripe(secret, {    });
+    if (!secret) throw new Error('STRIPE_SECRET_KEY is not set');
 
-    // 戻り先URLのベース（フロントURL）
+    this.stripe = new Stripe(secret, {});
+
     const front =
       process.env.FRONT_URL ||
       this.config.get<string>('frontUrl') ||
@@ -41,14 +39,6 @@ export class CreatorKycController {
     this.appOrigin = front.replace(/\/+$/, '');
   }
 
-  /**
-   * POST /api/creators/me/kyc/start
-   *
-   * settings.tsx の api.startCreatorKyc() から呼ばれる想定。
-   * - Creator 用の Stripe Connect Account を作成 or 取得
-   * - account_onboarding のための account_link を作成
-   * - { url } を返してフロント側で window.location.href = url
-   */
   @Post('start')
   async startKyc(@Req() req: any) {
     try {
@@ -66,11 +56,11 @@ export class CreatorKycController {
           stripeAccountId: true,
         },
       });
-      if (!creator) {
-        throw new BadRequestException('creator not found');
-      }
+      if (!creator) throw new BadRequestException('creator not found');
 
       let accountId = creator.stripeAccountId;
+
+      // 1) 無ければ作成
       if (!accountId) {
         const acct = await this.stripe.accounts.create({
           type: 'express',
@@ -90,11 +80,34 @@ export class CreatorKycController {
           where: { userId: creatorId },
           data: {
             stripeAccountId: accountId,
-            stripeKycStatus: 'pending',
           },
         });
       }
 
+      // 2) 既存でも必ず最新Accountを引いてDBを最低限同期（null潰し）
+      const acct = await this.stripe.accounts.retrieve(accountId);
+
+      const chargesEnabled = !!acct.charges_enabled;
+      const payoutsEnabled = !!acct.payouts_enabled;
+      const disabledReason = acct.requirements?.disabled_reason ?? null;
+      const currentlyDue = acct.requirements?.currently_due ?? [];
+
+      const kycStatus: KycStatus =
+        chargesEnabled && payoutsEnabled ? KycStatus.approved : KycStatus.pending;
+
+      await this.prisma.creator.update({
+        where: { userId: creatorId },
+        data: {
+          stripeKycStatus: kycStatus,
+          stripeChargesEnabled: chargesEnabled,
+          stripePayoutsEnabled: payoutsEnabled,
+          stripeKycDisabledReason: disabledReason,
+          // schemaが string[] なら { set: currentlyDue } に変更
+          stripeKycFieldsDue: currentlyDue.join(','),
+        } as any,
+      });
+
+      // 3) 戻り先URL（あなたのフロントの /creator/settings に合わせる）
       const refreshUrl = `${this.appOrigin}/creator/settings?kyc=refresh`;
       const returnUrl = `${this.appOrigin}/creator/settings?kyc=return`;
 
@@ -108,10 +121,7 @@ export class CreatorKycController {
       return { url: link.url };
     } catch (err: any) {
       console.error('Stripe KYC error:', err, err?.raw);
-      const msg =
-        err?.raw?.message ??
-        err?.message ??
-        'Stripe KYC start failed';
+      const msg = err?.raw?.message ?? err?.message ?? 'Stripe KYC start failed';
       throw new BadRequestException(msg);
     }
   }

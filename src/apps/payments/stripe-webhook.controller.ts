@@ -6,6 +6,7 @@ import {
   HttpCode,
   Post,
   Req,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
@@ -23,15 +24,13 @@ export class StripeWebhookController {
       process.env.STRIPE_SECRET_KEY ||
       this.config.get<string>('stripeSecretKey');
 
-    if (!secret) {
-      throw new Error('STRIPE_SECRET_KEY is not set');
-    }
+    if (!secret) throw new Error('STRIPE_SECRET_KEY is not set');
 
-    this.stripe = new Stripe(secret, { });
+    this.stripe = new Stripe(secret, {});
   }
 
   @Post('webhook')
-  @HttpCode(200) // Stripe は 2xx 応答が必須
+  @HttpCode(200)
   async handleWebhook(
     @Req() req: any,
     @Headers('stripe-signature') signature?: string,
@@ -40,60 +39,26 @@ export class StripeWebhookController {
       process.env.STRIPE_WEBHOOK_SECRET ||
       this.config.get<string>('stripeWebhookSecret');
 
-    if (!whSecret) {
-      throw new BadRequestException('STRIPE_WEBHOOK_SECRET is not set');
-    }
-    if (!signature) {
-      throw new BadRequestException('Missing stripe-signature header');
-    }
+    if (!whSecret) throw new BadRequestException('STRIPE_WEBHOOK_SECRET is not set');
+    if (!signature) throw new BadRequestException('Missing stripe-signature header');
 
     let event: Stripe.Event;
+    let raw: Buffer | string;
+
     try {
-      // main.ts で rawBody を通しているので rawBody 優先
-      const buf = req.rawBody ?? req.body;
-      event = this.stripe.webhooks.constructEvent(buf, signature, whSecret);
+      raw = (req.rawBody ?? req.body) as any;
+      event = this.stripe.webhooks.constructEvent(raw, signature, whSecret);
     } catch (e: any) {
-      throw new BadRequestException(
-        `Webhook signature verification failed: ${e.message}`,
-      );
+      throw new BadRequestException(`Webhook signature verification failed: ${e.message}`);
     }
 
-    switch (event.type) {
-      case 'account.updated':
-        await this.webhookService.handleAccountUpdated(
-          event.data.object as Stripe.Account,
-        );
-        break;
-
-      case 'checkout.session.completed':
-        await this.webhookService.handleCheckoutSessionCompleted(
-          event.data.object as Stripe.Checkout.Session,
-        );
-        break;
-
-      // ★ ここを修正
-      case 'customer.subscription.created':
-      case 'customer.subscription.updated':
-      case 'customer.subscription.deleted':
-        await this.webhookService.handleSubscriptionUpdated(
-          event.data.object as Stripe.Subscription,
-        );
-        break;
-
-      case 'invoice.payment_succeeded':
-        await this.webhookService.handleInvoicePaymentSucceeded(
-          event.data.object as Stripe.Invoice,
-        );
-        break;
-
-      case 'payment_intent.succeeded':
-        await this.webhookService.handlePaymentIntentSucceeded(
-          event.data.object as Stripe.PaymentIntent,
-        );
-        break;
-
-      default:
-        break;
+    try {
+      // ★ 入口の冪等 + 振り分けは service 側でまとめて行う
+      await this.webhookService.processEvent(event);
+    } catch (e: any) {
+      // ここで 5xx を返すと Stripe がリトライしてくれる
+      // ※ event.id で冪等にしておけば “リトライ = 安全な再実行” になる
+      throw new InternalServerErrorException(e?.message || 'Webhook handler failed');
     }
 
     return { received: true };

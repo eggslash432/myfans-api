@@ -75,4 +75,54 @@ export class AuthController {
     if (!user) throw new UnauthorizedException();
     return user; // ← payloadは信用せず、DBのroleを返す
   }
+
+  @Get('me/summary')
+  @UseGuards(JwtAuthGuard)
+  async meSummary(@Req() req: any) {
+    const userId = String((req.user as any).id);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+
+        subscriptions: {
+          where: { status: { in: ['active', 'trialing', 'past_due'] } }, // 必要ならactiveだけでもOK
+          orderBy: { currentPeriodEnd: 'desc' },
+          select: {
+            id: true,
+            status: true,
+            currentPeriodStart: true,
+            currentPeriodEnd: true,
+            cancelAtPeriodEnd: true,
+            stripeSubscriptionId: true,
+            plan: { select: { id: true, name: true, priceJpy: true, billingInterval: true } },
+            creator: { select: { userId: true, publicName: true } },
+          },
+        },
+
+        payments: {
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+          select: {
+            id: true,
+            amountJpy: true,
+            kind: true,
+            paymentStatus: true,
+            paidAt: true,
+            createdAt: true,
+            plan: { select: { id: true, name: true } },
+            post: { select: { id: true, title: true } },
+            creator: { select: { userId: true, publicName: true } },
+          },
+        },
+      },
+    });
+
+    if (!user) throw new UnauthorizedException();
+    return user;
+  }
+
 }
