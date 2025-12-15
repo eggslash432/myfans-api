@@ -15,7 +15,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { S3Service } from '../s3/s3.service'; // パスは実プロジェクトに合わせて
+import { S3Service } from '../storage/s3.service'; // パスは実プロジェクトに合わせて
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';

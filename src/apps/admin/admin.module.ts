@@ -9,6 +9,7 @@ import { AdminSummaryController } from './admin-summary.controller';
 import { AdminService } from './admin.service';
 import { AdminSettingsController } from './admin-settings.controller';
 import { AdminUsersController } from './admin-users.controller';
+import { S3Service } from '../storage/s3.service';
 
 @Module({
   controllers: [
@@ -22,6 +23,7 @@ import { AdminUsersController } from './admin-users.controller';
   providers: [
     PrismaService,
     AdminService,
+    S3Service,
   ],
 })
 export class AdminModule {}

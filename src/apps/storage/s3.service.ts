@@ -1,9 +1,14 @@
-//src/apps/core/s3/s3.service.ts
+// api/src/apps/storage/s3.service.ts
 
 import { Injectable } from '@nestjs/common';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
+import { 
+  S3Client, 
+  PutObjectCommand, 
+  DeleteObjectCommand, 
+  DeleteObjectsCommand 
+} from '@aws-sdk/client-s3';
 
 @Injectable()
 export class S3Service {
@@ -58,4 +63,29 @@ export class S3Service {
     const base = (process.env.MEDIA_BASE_URL || '').replace(/\/+$/, '');
     return `${base}/${key}`;
   }  
+
+  async deleteKeys(keys: string[]) {
+    const bucket = process.env.MEDIA_BUCKET_NAME!;
+    const uniq = Array.from(new Set(keys)).filter(Boolean);
+    if (uniq.length === 0) return;
+
+    // 1件だけなら単体削除
+    if (uniq.length === 1) {
+      await this.client.send(
+        new DeleteObjectCommand({
+          Bucket: bucket,
+          Key: uniq[0],
+        }),
+      );
+      return;
+    }
+
+    // 複数件まとめて削除（最大1000/回）
+    await this.client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: { Objects: uniq.map((k) => ({ Key: k })), Quiet: true },
+      }),
+    );
+  }
 }

@@ -1,4 +1,4 @@
-// src/apps/admin/admin.posts.controller.ts
+// api/src/apps/admin/admin.posts.controller.ts
 import {
   Controller,
   Get,
@@ -13,11 +13,21 @@ import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminOnlyGuard } from '../access-control/admin-only.guard';
 import { PublishedStatus } from '@prisma/client';
+import { S3Service } from '../storage/s3.service';
+import { extractKeyFromMediaUrl } from '../storage/s3key.util';
+import {
+  getMediaBaseUrl,
+  isMediaOnS3,
+  extractS3KeyFromMediaUrl,
+} from 'src/shared/media.util';
 
 @UseGuards(JwtAuthGuard, AdminOnlyGuard)
 @Controller('admin/posts')
 export class AdminPostsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly s3Service: S3Service,
+  ) {}
 
   // 投稿一覧（管理画面用）
   @Get()
@@ -59,15 +69,33 @@ export class AdminPostsController {
     }));
   }
 
-  // 投稿削除（今回は「非公開化」でソフトデリート扱い）
+  // 投稿削除（物理削除）
   @Delete(':id')
   async deletePost(@Param('id') id: string) {
-    await this.prisma.post.update({
-      where: { id },
-      data: {
-        publishedStatus: PublishedStatus.private,
-      },
+    // 1. 紐づくメディア取得
+    const media = await this.prisma.postMedia.findMany({
+      where: { postId: id },
     });
+
+    // 2. S3 上のキーだけ抽出
+    const keys = media
+      .map((m) => {
+        if (!m.url) return null;
+        if (!isMediaOnS3(m.url)) return null;
+        return extractS3KeyFromMediaUrl(m.url);
+      })
+      .filter((k): k is string => !!k);
+
+    // 3. S3削除（keys.length === 0 でもOK）
+    if (keys.length > 0) {
+      await this.s3Service.deleteKeys(keys);
+    }
+
+    // 4. DBから物理削除（Cascadeで関連も消える）
+    await this.prisma.post.delete({
+      where: { id },
+    });
+
     return { ok: true };
   }
 

@@ -1,7 +1,7 @@
 // src/apps/core/media/media.controller.ts
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { S3Service } from '../s3/s3.service';
+import { S3Service } from '../storage/s3.service';
 
 class CreatePresignDto {
   fileName: string;

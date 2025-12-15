@@ -13,7 +13,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { AdminModule } from '../admin/admin.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { S3Service } from '../s3/s3.service';
+import { S3Service } from '../storage/s3.service';
 import { MediaController } from '../media/media.controller';
 
 @Module({
