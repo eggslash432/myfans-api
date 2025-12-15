@@ -32,11 +32,11 @@ export class CreatorsController {
    * ===================================================== */
 
   @UseGuards(JwtAuthGuard)
-  @Post()
+  @Post('apply')
   async applyCreator(@Req() req: any, @Body() dto: CreateCreatorDto) {
     const userId = req.user.id;
     return this.creatorsService.applyCreator(userId, dto);
-  }
+  }  
 
   @Get()
   async list() {
