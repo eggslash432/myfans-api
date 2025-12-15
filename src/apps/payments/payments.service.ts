@@ -37,8 +37,9 @@ export class PaymentsService {
     userId: string,
     creatorId: string,
     planId: string,
+    successUrlIn?: string,
+    cancelUrlIn?: string,  
   ) {
-
     // creator の Stripe アカウントID を取得
     const creator = await this.prisma.creator.findUnique({
       where: { userId: creatorId },
@@ -95,8 +96,8 @@ export class PaymentsService {
       process.env.STRIPE_CANCEL_PATH ??
       '/mypage?purchase=cancel';
 
-    const successUrl = `${appOrigin}${successPath}`;
-    const cancelUrl = `${appOrigin}${cancelPath}`;
+    const successUrl = successUrlIn ?? `${appOrigin}${successPath}`;
+    const cancelUrl  = cancelUrlIn  ?? `${appOrigin}${cancelPath}`; 
 
     // Webhook 側で使う metadata
     const metadata = {

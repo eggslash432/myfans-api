@@ -62,6 +62,8 @@ export class PaymentsController {
         userId,
         plan.creatorId,
         plan.id,
+        dto.successUrl,
+        dto.cancelUrl,
       );
 
       return { url };
