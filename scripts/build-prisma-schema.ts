@@ -1,3 +1,5 @@
+// api/scripts/build-prisma-schema.ts
+
 import * as fs from "fs";
 import * as path from "path";
 

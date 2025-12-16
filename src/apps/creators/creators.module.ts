@@ -7,11 +7,13 @@ import { HelpersModule } from '../helpers/helpers.module';
 import { ConfigModule } from '@nestjs/config';
 import { CreatorKycController } from './creator-kyc.controller';
 import { CreatorApplicationsController } from './creator-applications.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     HelpersModule, 
-    ConfigModule
+    ConfigModule,
+    NotificationsModule,
   ],
   controllers: [
     CreatorsController, 

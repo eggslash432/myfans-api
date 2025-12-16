@@ -1,10 +1,12 @@
+// api/scripts/export-enums.ts
+
 import { writeFileSync, mkdirSync } from 'fs';
 import { Prisma } from '@prisma/client';
 
-const outPath = '../myfans-frontend/src/shared/prisma-enums.ts';
+const outPath = '../front/src/shared/prisma-enums.ts';
 
 // 出力先が無ければ作成
-mkdirSync('../myfans-frontend/src/shared', { recursive: true });
+mkdirSync('../front/src/shared', { recursive: true });
 
 // Prisma の公開APIから DMMF を取得
 const enums = Prisma.dmmf.datamodel.enums.map(e => {
