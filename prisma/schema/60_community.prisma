@@ -1,0 +1,42 @@
+// api/prisma/schema/60_community.prisma
+
+model Report {
+  id     String @id @default(uuid())
+  postId String
+  userId String
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  reason    String?
+  status    String @default("pending")
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type  String
+  title String
+  body  String
+  readAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Favorite {
+  userId    String
+  creatorId String
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+
+  notifyEnabled Boolean @default(true)
+  createdAt     DateTime @default(now())
+
+  @@id([userId, creatorId])
+}

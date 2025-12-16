@@ -1,0 +1,106 @@
+//api/prisma/schema/10_enums.prisma
+
+// ==============================
+// 権限・審査
+// ==============================
+enum Role {
+  fan
+  creator
+  admin
+  sub_admin
+}
+
+enum CreatorApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum KycStatus {
+  pending
+  approved
+  rejected
+}
+
+// ==============================
+// 投稿・公開制御
+// ==============================
+enum PublishedStatus {
+  draft
+  published
+  private
+}
+
+enum Visibility {
+  free
+  plan
+  paid_single
+}
+
+enum AgeRating {
+  all
+  r18
+}
+
+enum MediaType {
+  image
+  video
+  audio
+}
+
+// ==============================
+// 課金・決済
+// ==============================
+enum BillingInterval {
+  month
+  year
+}
+
+enum CheckoutMode {
+  payment
+  subscription
+}
+
+enum PaymentKind {
+  subscription
+  one_time
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+  refunded
+}
+
+enum SubStatus {
+  active
+  trialing
+  past_due
+  incomplete
+  canceled
+}
+
+// ==============================
+// 精算・出金
+// ==============================
+enum TransferKind {
+  platform
+  shop
+  creator
+}
+
+enum PayoutStatus {
+  requested
+  approved
+  paid
+  rejected
+}
+
+// ==============================
+// UI（フロント都合の enum）
+// ==============================
+enum PlanModalMode {
+  create
+  edit
+}

@@ -1,0 +1,134 @@
+//api/prisma/schema/40_plan_subscription.prisma
+
+model Plan {
+  id        String @id @default(uuid())
+  creatorId String
+  creator   Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+
+  name            String
+  description     String?
+  priceJpy        Int
+  billingInterval BillingInterval @default(month)
+  isActive        Boolean         @default(true)
+  sortOrder       Int             @default(0)
+
+  externalPriceId String?
+
+  creatorSharePercent  Int @default(80)
+  platformSharePercent Int @default(20)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+  posts         Post[]
+  payments      Payment[]
+
+  @@index([creatorId])
+  @@index([isActive, creatorId])
+}
+
+model Subscription {
+  id        String @id @default(uuid())
+  userId    String
+  creatorId String
+  planId    String
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  stripeSubscriptionId String @unique
+  status               SubStatus
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, creatorId, planId])
+  @@index([status])
+  @@index([currentPeriodEnd])
+}
+
+model Payment {
+  id        String @id @default(uuid())
+  userId    String?
+  creatorId String?
+  planId    String?
+  postId    String?
+
+  user    User?    @relation(fields: [userId], references: [id])
+  creator Creator? @relation(fields: [creatorId], references: [userId])
+  plan    Plan?    @relation(fields: [planId], references: [id])
+  post    Post?    @relation(fields: [postId], references: [id])
+
+  kind          PaymentKind
+  amountJpy     Int
+  paymentStatus PaymentStatus
+  externalTxId  String? @unique
+
+  paidAt    DateTime?
+  createdAt DateTime @default(now())
+
+  // 分配（スナップショット）
+  managerPercent Int?
+  shopPercent    Int?
+  creatorPercent Int?
+
+  creatorAmountJpy  Int?
+  platformAmountJpy Int?
+
+  transfers Transfer[]
+
+  @@index([paymentStatus, createdAt])
+  @@index([creatorId])
+  @@index([planId])
+  @@index([postId])
+}
+
+model WebhookLog {
+  id String @id @default(uuid())
+
+  // 対象イベント
+  eventId String
+  event   WebhookEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // 処理内容
+  action  String   // payment_create / transfer_create / payout_update など
+  success Boolean
+
+  message String?
+
+  // 記録時刻
+  createdAt DateTime @default(now())
+
+  @@index([eventId, createdAt])
+}
+
+model WebhookEvent {
+  id String @id @default(uuid())
+
+  // どこから来たイベントか
+  provider  String        // stripe など
+  eventType String        // checkout.session.completed 等
+
+  // 冪等・重複防止
+  idempotencyKey String? @unique
+
+  // 生ペイロード
+  payload Json
+
+  // 処理状態
+  processed   Boolean  @default(false)
+  processedAt DateTime?
+
+  // 受信時刻
+  createdAt DateTime @default(now())
+
+  // 1イベントに対する処理ログ
+  logs WebhookLog[]
+
+  @@index([provider, eventType, createdAt])
+}

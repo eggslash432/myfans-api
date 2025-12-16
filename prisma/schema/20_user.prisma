@@ -1,0 +1,40 @@
+//api/prisma/schema/20_user.prisma
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  role            Role      @default(fan)
+  isActive        Boolean   @default(true)
+  emailVerifiedAt DateTime?
+  stripeCustomerId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile        Profile?
+  creator        Creator?
+  kycSubmissions KycSubmission[]
+  subscriptions  Subscription[]
+  payments       Payment[]
+  postAccesses   PostAccess[]
+
+  favorites     Favorite[]
+  reports       Report[]
+  notifications Notification[]
+
+  @@index([role])
+  @@index([isActive])
+}
+
+model Profile {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  displayName String
+  avatarUrl   String?
+  bio         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

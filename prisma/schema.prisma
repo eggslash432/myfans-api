@@ -1,6 +1,8 @@
-///
-/// prisma/schema.prisma
-///
+// AUTO-GENERATED FILE. DO NOT EDIT.
+// Edit files in prisma/schema/*.prisma instead.
+
+// ===== 00_base.prisma =====
+//api/prisma/schema/00_base.prisma
 
 generator client {
   provider = "prisma-client-js"
@@ -11,13 +13,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ===== Enums =====
+// ===== 10_enums.prisma =====
+//api/prisma/schema/10_enums.prisma
 
+// ==============================
+// 権限・審査
+// ==============================
 enum Role {
   fan
   creator
   admin
   sub_admin
+}
+
+enum CreatorApprovalStatus {
+  pending
+  approved
+  rejected
 }
 
 enum KycStatus {
@@ -26,18 +38,13 @@ enum KycStatus {
   rejected
 }
 
+// ==============================
+// 投稿・公開制御
+// ==============================
 enum PublishedStatus {
   draft
   published
   private
-}
-
-enum SubStatus {
-  active
-  past_due
-  canceled
-  incomplete
-  trialing
 }
 
 enum Visibility {
@@ -57,6 +64,14 @@ enum MediaType {
   audio
 }
 
+// ==============================
+// 課金・決済
+// ==============================
+enum BillingInterval {
+  month
+  year
+}
+
 enum CheckoutMode {
   payment
   subscription
@@ -68,10 +83,27 @@ enum PaymentKind {
 }
 
 enum PaymentStatus {
-  paid
-  refunded
-  failed
   pending
+  paid
+  failed
+  refunded
+}
+
+enum SubStatus {
+  active
+  trialing
+  past_due
+  incomplete
+  canceled
+}
+
+// ==============================
+// 精算・出金
+// ==============================
+enum TransferKind {
+  platform
+  shop
+  creator
 }
 
 enum PayoutStatus {
@@ -81,23 +113,16 @@ enum PayoutStatus {
   rejected
 }
 
-enum BillingInterval {
-  month
-  year
-}
-
+// ==============================
+// UI（フロント都合の enum）
+// ==============================
 enum PlanModalMode {
   create
   edit
 }
 
-enum CreatorApprovalStatus {
-  pending
-  approved
-  rejected
-}
-
-// ===== Core Users =====
+// ===== 20_user.prisma =====
+//api/prisma/schema/20_user.prisma
 
 model User {
   id              String    @id @default(uuid())
@@ -106,20 +131,20 @@ model User {
   role            Role      @default(fan)
   isActive        Boolean   @default(true)
   emailVerifiedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
   stripeCustomerId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   profile        Profile?
   creator        Creator?
   kycSubmissions KycSubmission[]
   subscriptions  Subscription[]
-  favorites      Favorite[]
   payments       Payment[]
   postAccesses   PostAccess[]
-  reports        Report[]
 
+  favorites     Favorite[]
+  reports       Report[]
   notifications Notification[]
 
   @@index([role])
@@ -127,26 +152,33 @@ model User {
 }
 
 model Profile {
-  userId      String   @id
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   displayName String
   avatarUrl   String?
   bio         String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-// ===== Creator & KYC =====
+// ===== 30_creator_kyc.prisma =====
+//api/prisma/schema/30_creator_kyc.prisma
+
 model Creator {
-  userId     String @id
-  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  shopId String?
+  shop   Shop?  @relation(fields: [shopId], references: [id])
+
   publicName String
 
   approvalStatus CreatorApprovalStatus @default(pending)
   approvedAt     DateTime?
   rejectedAt     DateTime?
   rejectReason   String?
-  applications   CreatorApplication[]
 
   bankAccount             Json?
   stripeAccountId         String?
@@ -157,126 +189,226 @@ model Creator {
   stripeKycErrors         String?
   stripeKycFieldsDue      String?
   isListed                Boolean  @default(false)
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  applications  CreatorApplication[]
   plans         Plan[]
-  posts         Post[]         @relation("CreatorPosts")
+  posts         Post[] @relation("CreatorPosts")
   payouts       Payout[]
-  favorites     Favorite[]
   payments      Payment[]
   subscriptions Subscription[]
+  favorites     Favorite[]
 
-  @@index([isListed])
+  @@index([isListed, shopId])
 }
 
 model CreatorApplication {
-  id      String  @id @default(uuid())
-  userId  String
+  id     String @id @default(uuid())
+  userId String
   creator Creator @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
-  publicName   String
-  bankAccount  Json?
-  status       CreatorApprovalStatus @default(pending)
+  publicName  String
+  bankAccount Json?
+  status      CreatorApprovalStatus @default(pending)
   rejectReason String?
-  createdAt    DateTime              @default(now())
+  createdAt   DateTime @default(now())
 
   @@index([userId, createdAt])
 }
 
 model KycSubmission {
-  id         String    @id @default(uuid())
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId     String
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   status     KycStatus
   documents  Json
   reviewedBy Int?
   reviewedAt DateTime?
   note       String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@index([status, createdAt])
 }
 
-// ===== Plans & Subscriptions =====
+model Shop {
+  id              String @id @default(uuid())
+  name            String
+  stripeAccountId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  creators Creator[]
+}
+
+// ===== 40_plan_subscription.prisma =====
+//api/prisma/schema/40_plan_subscription.prisma
 
 model Plan {
-  id        String  @id @default(uuid())
-  creator   Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  id        String @id @default(uuid())
   creatorId String
+  creator   Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
 
   name            String
-  priceJpy        Int
   description     String?
-  isActive        Boolean         @default(true)
+  priceJpy        Int
   billingInterval BillingInterval @default(month)
-  externalPriceId String?
+  isActive        Boolean         @default(true)
   sortOrder       Int             @default(0)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+
+  externalPriceId String?
 
   creatorSharePercent  Int @default(80)
   platformSharePercent Int @default(20)
 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   subscriptions Subscription[]
   posts         Post[]
-  Payment       Payment[]
+  payments      Payment[]
 
   @@index([creatorId])
   @@index([isActive, creatorId])
 }
 
-model WebhookLog {
-  id        String   @id
-  type      String
-  createdAt DateTime @default(now())
-}
-
 model Subscription {
-  id                   String    @id @default(uuid())
-  userId               String
-  creatorId            String
-  planId               String
-  stripeSubscriptionId String    @unique
-  status               SubStatus
-  currentPeriodStart   DateTime
-  currentPeriodEnd     DateTime
-  cancelAtPeriodEnd    Boolean   @default(false)
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id        String @id @default(uuid())
+  userId    String
+  creatorId String
+  planId    String
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   creator Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
   plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  stripeSubscriptionId String @unique
+  status               SubStatus
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([userId, creatorId, planId])
   @@index([status])
   @@index([currentPeriodEnd])
 }
 
-// ===== Posts =====
+model Payment {
+  id        String @id @default(uuid())
+  userId    String?
+  creatorId String?
+  planId    String?
+  postId    String?
+
+  user    User?    @relation(fields: [userId], references: [id])
+  creator Creator? @relation(fields: [creatorId], references: [userId])
+  plan    Plan?    @relation(fields: [planId], references: [id])
+  post    Post?    @relation(fields: [postId], references: [id])
+
+  kind          PaymentKind
+  amountJpy     Int
+  paymentStatus PaymentStatus
+  externalTxId  String? @unique
+
+  paidAt    DateTime?
+  createdAt DateTime @default(now())
+
+  // 分配（スナップショット）
+  managerPercent Int?
+  shopPercent    Int?
+  creatorPercent Int?
+
+  creatorAmountJpy  Int?
+  platformAmountJpy Int?
+
+  transfers Transfer[]
+
+  @@index([paymentStatus, createdAt])
+  @@index([creatorId])
+  @@index([planId])
+  @@index([postId])
+}
+
+model WebhookLog {
+  id String @id @default(uuid())
+
+  // 対象イベント
+  eventId String
+  event   WebhookEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // 処理内容
+  action  String   // payment_create / transfer_create / payout_update など
+  success Boolean
+
+  message String?
+
+  // 記録時刻
+  createdAt DateTime @default(now())
+
+  @@index([eventId, createdAt])
+}
+
+model WebhookEvent {
+  id String @id @default(uuid())
+
+  // どこから来たイベントか
+  provider  String        // stripe など
+  eventType String        // checkout.session.completed 等
+
+  // 冪等・重複防止
+  idempotencyKey String? @unique
+
+  // 生ペイロード
+  payload Json
+
+  // 処理状態
+  processed   Boolean  @default(false)
+  processedAt DateTime?
+
+  // 受信時刻
+  createdAt DateTime @default(now())
+
+  // 1イベントに対する処理ログ
+  logs WebhookLog[]
+
+  @@index([provider, eventType, createdAt])
+}
+
+// ===== 50_post_media_access.prisma =====
+//api/prisma/schema/50_post_media_access.prisma
 
 model Post {
-  id              String          @id @default(uuid())
-  creatorId       String?
-  creator         Creator?        @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
-  isOfficial      Boolean         @default(false)
-  title           String
-  body            String?
-  visibility      Visibility
-  plan            Plan?           @relation(fields: [planId], references: [id])
-  planId          String?
+  id        String @id @default(uuid())
+  creatorId String?
+  planId    String?
+
+  creator Creator? @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
+  plan    Plan?    @relation(fields: [planId], references: [id])
+
+  title      String
+  body       String?
+  visibility Visibility
+  ageRating  AgeRating @default(all)
+
+  priceJpy        Int?
+  isOfficial      Boolean @default(false)
   publishedStatus PublishedStatus @default(draft)
   publishedAt     DateTime?
-  ageRating       AgeRating       @default(all)
-  priceJpy        Int?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   media        PostMedia[]
-  Payment      Payment[]
+  payments     Payment[]
   postAccesses PostAccess[]
   reports      Report[]
 
@@ -286,124 +418,53 @@ model Post {
 }
 
 model PostMedia {
-  id        String    @id @default(uuid())
-  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  postId    String
+  id     String @id @default(uuid())
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
   mediaType MediaType
   url       String
-  sortOrder Int       @default(0)
-  isSample  Boolean   @default(false)
+  sortOrder Int     @default(0)
+  isSample  Boolean @default(false)
 
   @@index([postId])
   @@index([postId, isSample])
 }
 
 model UploadSetting {
-  id            Int      @id @default(1)
-  maxFileSizeMb Int      @default(200) // 例: 200MB
-  maxFiles      Int      @default(10)
+  id            Int @id @default(1)
+  maxFileSizeMb Int @default(200)
+  maxFiles      Int @default(10)
   updatedAt     DateTime @updatedAt
 }
 
 model PostAccess {
-  id        String    @id @default(cuid())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  postId    String
+  id     String @id @default(cuid())
+  userId String
+  postId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
   expiresAt DateTime?
 
   @@unique([userId, postId])
 }
 
-// ===== Social =====
-
-model Favorite {
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        String
-  creator       Creator  @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
-  creatorId     String
-  notifyEnabled Boolean  @default(true)
-  createdAt     DateTime @default(now())
-
-  @@id([userId, creatorId])
-}
-
-// ===== Payments & Operational =====
-model FeeSetting {
-  id             Int      @id @default(1)
-  managerPercent Int
-  shopPercent    Int
-  creatorPercent Int
-  updatedAt      DateTime @updatedAt
-}
-
-model Payment {
-  id            String        @id @default(uuid())
-  user          User?         @relation(fields: [userId], references: [id])
-  userId        String?
-  creator       Creator?      @relation(fields: [creatorId], references: [userId])
-  creatorId     String?
-  plan          Plan?         @relation(fields: [planId], references: [id])
-  planId        String?
-  post          Post?         @relation(fields: [postId], references: [id])
-  postId        String?
-  amountJpy     Int
-  kind          PaymentKind
-  externalTxId  String?       @unique
-  paymentStatus PaymentStatus
-  paidAt        DateTime?
-  createdAt     DateTime      @default(now())
-
-  creatorAmountJpy  Int?
-  platformAmountJpy Int?
-
-  managerPercent Int?
-  shopPercent    Int?
-  creatorPercent Int?
-
-  @@index([paymentStatus, createdAt])
-  @@index([creatorId])
-  @@index([planId])
-  @@index([postId])
-}
-
-model Payout {
-  id           String       @id @default(uuid())
-  creator      Creator      @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
-  creatorId    String
-  amountJpy    Int
-  payoutStatus PayoutStatus
-  requestedAt  DateTime     @default(now())
-  paidAt       DateTime?
-  note         String?
-
-  @@index([creatorId, payoutStatus])
-}
-
-model WebhookEvent {
-  id             String    @id @default(uuid())
-  provider       String
-  eventType      String
-  idempotencyKey String?   @unique
-  payload        Json
-  processed      Boolean   @default(false)
-  createdAt      DateTime  @default(now())
-  processedAt    DateTime?
-
-  @@index([provider, eventType, createdAt])
-}
+// ===== 60_community.prisma =====
+// api/prisma/schema/60_community.prisma
 
 model Report {
-  id        String   @id @default(uuid())
-  postId    String
-  userId    String
-  reason    String?
-  createdAt DateTime @default(now())
-  status    String   @default("pending") // pending / reviewed / dismissed
+  id     String @id @default(uuid())
+  postId String
+  userId String
 
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  reason    String?
+  status    String @default("pending")
+  createdAt DateTime @default(now())
 }
 
 model Notification {
@@ -411,11 +472,67 @@ model Notification {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  type      String
-  title     String
-  body      String
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
+  type  String
+  title String
+  body  String
+  readAt DateTime?
+
+  createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+model Favorite {
+  userId    String
+  creatorId String
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+
+  notifyEnabled Boolean @default(true)
+  createdAt     DateTime @default(now())
+
+  @@id([userId, creatorId])
+}
+
+// ===== 70_settlement.prisma =====
+//api/prisma/schema/70_settlement.prisma
+
+model Transfer {
+  id        String @id @default(uuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  kind            TransferKind
+  amountJpy       Int
+  destinationAcct String
+  stripeTransferId String? @unique
+
+  createdAt DateTime @default(now())
+
+  @@index([paymentId])
+}
+
+model Payout {
+  id        String @id @default(uuid())
+  creatorId String
+  creator   Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+
+  amountJpy    Int
+  payoutStatus PayoutStatus
+  note         String?
+
+  requestedAt DateTime @default(now())
+  paidAt      DateTime?
+
+  @@index([creatorId, payoutStatus])
+}
+
+model FeeSetting {
+  id             Int @id @default(1)
+  managerPercent Int
+  shopPercent    Int
+  creatorPercent Int
+
+  updatedAt DateTime @updatedAt
 }

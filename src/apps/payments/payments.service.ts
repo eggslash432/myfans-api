@@ -43,12 +43,15 @@ export class PaymentsService {
     // ① creator の Stripe アカウントID
     const creator = await this.prisma.creator.findUnique({
       where: { userId: creatorId },
-      select: { stripeAccountId: true },
+      select: { 
+        stripeAccountId: true,
+        shopId: true, 
+      },
     });
 
     if (!creator?.stripeAccountId) {
       throw new Error('クリエイターの Stripe アカウントが設定されていません');
-    }
+    } 
 
     // ② プラン情報
     const plan = await this.prisma.plan.findUnique({
@@ -101,11 +104,15 @@ export class PaymentsService {
     const cancelUrl  = cancelUrlIn  ?? `${appOrigin}/payments/cancel?from=plan&planId=${plan.id}`;
 
     // ④ Webhook 用 metadata
-    const metadata = {
-      userId,
-      planId: plan.id,
-      creatorId,
+    const metadata: Record<string, string> = {
+      userId: String(userId),
+      planId: String(plan.id),
+      creatorId: String(creatorId),
     };
+
+    if (creator.shopId) {
+      metadata.shopId = String(creator.shopId); 
+    }    
 
     // ⑤ interval
     const interval: 'month' | 'year' =
@@ -136,10 +143,6 @@ export class PaymentsService {
       ],
       subscription_data: {
         metadata, // subscription metadata
-        application_fee_percent: platformPercent, // ← platformの取り分（%）
-        transfer_data: {
-          destination: creator.stripeAccountId, // ← creatorへ送金
-        },
       },
       customer: await this.ensureStripeCustomer(userId),
       success_url: successUrl,
@@ -184,7 +187,10 @@ export class PaymentsService {
       where: { id: postId },
       include: {
         creator: {
-          select: { stripeAccountId: true },
+          select: { 
+            stripeAccountId: true,
+            shopId: true, 
+          },
         },
       },
     });
@@ -203,11 +209,15 @@ export class PaymentsService {
 
     const applicationFee = split.managerAmountJpy + split.shopAmountJpy;
 
-    const metadata = {
-      userId,
-      postId: post.id,
-      creatorId: post.creatorId,
+    const metadata: Record<string, string> = {
+      userId: String(userId),
+      postId: String(post.id),
+      creatorId: String(post.creatorId),
     };
+
+    if (post.creator?.shopId) {
+      metadata.shopId = String(post.creator.shopId);
+    }
 
     const session = await this.stripe.checkout.sessions.create({
       mode: 'payment',
@@ -227,43 +237,11 @@ export class PaymentsService {
       metadata,
       payment_intent_data: {
         metadata,
-        application_fee_amount: applicationFee,
-        transfer_data: {
-          destination: post.creator.stripeAccountId,
-        },
       },
     });
 
     return { url: session.url };
   }
-
-
-  /**
-   * プランID → Stripe Price ID を取得
-   * - 現行スキーマの externalPriceId を使う
-   */
-  // private async getStripePriceId(planId: string): Promise<string> {
-  //   const plan = await this.prisma.plan.findUnique({
-  //     where: { id: planId },
-  //     select: {
-  //       externalPriceId: true,
-  //     },
-  //   });
-
-  //   if (!plan) {
-  //     this.logger.error(`Plan not found for planId=${planId}`);
-  //     throw new Error('Plan not found.');
-  //   }
-
-  //   if (!plan.externalPriceId) {
-  //     this.logger.error(
-  //       `Stripe Price ID (externalPriceId) not set for planId=${planId}`,
-  //     );
-  //     throw new Error('Stripe Price ID is not set for this plan.');
-  //   }
-
-  //   return String(plan.externalPriceId);
-  // }
 
   /**
    * ユーザーに Stripe Customer を割り当て（無ければ作成）

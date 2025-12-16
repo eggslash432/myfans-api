@@ -1,0 +1,10 @@
+//api/prisma/schema/00_base.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // ここは現状のDBに合わせる（mysql/sqliteなど）
+  url      = env("DATABASE_URL")
+}

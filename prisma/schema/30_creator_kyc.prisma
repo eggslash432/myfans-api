@@ -1,0 +1,82 @@
+//api/prisma/schema/30_creator_kyc.prisma
+
+model Creator {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  shopId String?
+  shop   Shop?  @relation(fields: [shopId], references: [id])
+
+  publicName String
+
+  approvalStatus CreatorApprovalStatus @default(pending)
+  approvedAt     DateTime?
+  rejectedAt     DateTime?
+  rejectReason   String?
+
+  bankAccount             Json?
+  stripeAccountId         String?
+  stripeKycStatus         String?
+  stripeChargesEnabled    Boolean  @default(false)
+  stripePayoutsEnabled    Boolean  @default(false)
+  stripeKycDisabledReason String?
+  stripeKycErrors         String?
+  stripeKycFieldsDue      String?
+  isListed                Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  applications  CreatorApplication[]
+  plans         Plan[]
+  posts         Post[] @relation("CreatorPosts")
+  payouts       Payout[]
+  payments      Payment[]
+  subscriptions Subscription[]
+  favorites     Favorite[]
+
+  @@index([isListed, shopId])
+}
+
+model CreatorApplication {
+  id     String @id @default(uuid())
+  userId String
+  creator Creator @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  publicName  String
+  bankAccount Json?
+  status      CreatorApprovalStatus @default(pending)
+  rejectReason String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model KycSubmission {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status     KycStatus
+  documents  Json
+  reviewedBy Int?
+  reviewedAt DateTime?
+  note       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status, createdAt])
+}
+
+model Shop {
+  id              String @id @default(uuid())
+  name            String
+  stripeAccountId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  creators Creator[]
+}

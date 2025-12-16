@@ -1,0 +1,40 @@
+//api/prisma/schema/70_settlement.prisma
+
+model Transfer {
+  id        String @id @default(uuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  kind            TransferKind
+  amountJpy       Int
+  destinationAcct String
+  stripeTransferId String? @unique
+
+  createdAt DateTime @default(now())
+
+  @@index([paymentId])
+}
+
+model Payout {
+  id        String @id @default(uuid())
+  creatorId String
+  creator   Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+
+  amountJpy    Int
+  payoutStatus PayoutStatus
+  note         String?
+
+  requestedAt DateTime @default(now())
+  paidAt      DateTime?
+
+  @@index([creatorId, payoutStatus])
+}
+
+model FeeSetting {
+  id             Int @id @default(1)
+  managerPercent Int
+  shopPercent    Int
+  creatorPercent Int
+
+  updatedAt DateTime @updatedAt
+}

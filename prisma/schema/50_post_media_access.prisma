@@ -1,0 +1,66 @@
+//api/prisma/schema/50_post_media_access.prisma
+
+model Post {
+  id        String @id @default(uuid())
+  creatorId String?
+  planId    String?
+
+  creator Creator? @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
+  plan    Plan?    @relation(fields: [planId], references: [id])
+
+  title      String
+  body       String?
+  visibility Visibility
+  ageRating  AgeRating @default(all)
+
+  priceJpy        Int?
+  isOfficial      Boolean @default(false)
+  publishedStatus PublishedStatus @default(draft)
+  publishedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  media        PostMedia[]
+  payments     Payment[]
+  postAccesses PostAccess[]
+  reports      Report[]
+
+  @@index([creatorId, publishedStatus])
+  @@index([visibility, planId])
+  @@index([publishedAt])
+}
+
+model PostMedia {
+  id     String @id @default(uuid())
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  mediaType MediaType
+  url       String
+  sortOrder Int     @default(0)
+  isSample  Boolean @default(false)
+
+  @@index([postId])
+  @@index([postId, isSample])
+}
+
+model UploadSetting {
+  id            Int @id @default(1)
+  maxFileSizeMb Int @default(200)
+  maxFiles      Int @default(10)
+  updatedAt     DateTime @updatedAt
+}
+
+model PostAccess {
+  id     String @id @default(cuid())
+  userId String
+  postId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime?
+
+  @@unique([userId, postId])
+}
