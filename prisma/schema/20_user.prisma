@@ -23,6 +23,8 @@ model User {
   reports       Report[]
   notifications Notification[]
 
+  shopMembers    ShopMember[] 
+
   @@index([role])
   @@index([isActive])
 }

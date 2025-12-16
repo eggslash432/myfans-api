@@ -155,6 +155,8 @@ model User {
   reports       Report[]
   notifications Notification[]
 
+  shopMembers    ShopMember[] 
+
   @@index([role])
   @@index([isActive])
 }
@@ -231,7 +233,9 @@ model CreatorApplication {
   id     String @id @default(uuid())
   userId String
   shopId String?           // 申請先の店
+
   creator Creator @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  shop    Shop?    @relation(fields: [shopId], references: [id])
 
   publicName  String
   bankAccount Json?
@@ -270,6 +274,8 @@ model Shop {
   updatedAt DateTime @updatedAt
 
   creators Creator[]
+  members     ShopMember[]
+  applications CreatorApplication[]
 }
 
 // ===== 40_plan_subscription.prisma =====
