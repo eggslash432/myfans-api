@@ -108,8 +108,8 @@ export class CreatorKycController {
       });
 
       // 3) 戻り先URL（あなたのフロントの /creator/settings に合わせる）
-      const refreshUrl = `${this.appOrigin}/creator/settings?kyc=refresh`;
-      const returnUrl = `${this.appOrigin}/creator/settings?kyc=return`;
+      const refreshUrl = `${this.appOrigin}/creators/settings?kyc=refresh`;
+      const returnUrl = `${this.appOrigin}/creators/settings?kyc=return`;
 
       const link = await this.stripe.accountLinks.create({
         account: accountId,
