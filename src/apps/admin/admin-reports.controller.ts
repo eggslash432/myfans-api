@@ -43,6 +43,7 @@ export class AdminReportsController {
           select: {
             id: true,
             title: true,
+            publishedStatus: true, // ✅ 追加：投稿ステータス
             creator: {
               select: {
                 publicName: true,
@@ -59,6 +60,7 @@ export class AdminReportsController {
       id: r.id,
       postId: r.postId,
       postTitle: r.post?.title ?? '',
+      postPublishedStatus: (r.post as any)?.publishedStatus ?? null, // ✅ 追加
       creatorName:
         r.post?.creator?.publicName ??
         r.post?.creator?.user?.email ??
