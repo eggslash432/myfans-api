@@ -1,3 +1,8 @@
+// api/src/apps/admin/dto/resolve-reports.dto.ts
+
+import { IsIn } from 'class-validator';
+
 export class ResolveReportDto {
-  action: 'reviewed' | 'dismissed'; // reviewed:対応済み, dismissed:却下
+  @IsIn(['reviewed', 'dismissed'])
+  action!: 'reviewed' | 'dismissed';
 }

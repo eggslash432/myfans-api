@@ -1,4 +1,4 @@
-// src/apps/admin/admin-reports.controller.ts
+// api/src/apps/admin/admin-reports.controller.ts
 
 import {
   Body,
@@ -8,29 +8,35 @@ import {
   Patch,
   UseGuards,
   BadRequestException,
+  Query,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminOnlyGuard } from '../access-control/admin-only.guard';
-
-type ResolveAction = 'reviewed' | 'dismissed';
-
-class ResolveReportBody {
-  action!: ResolveAction;
-}
+import { ResolveReportDto } from './dto/resolve-reports.dto';
 
 @UseGuards(JwtAuthGuard, AdminOnlyGuard)
-@Controller('api/admin/reports')
+@Controller('admin/reports')
 export class AdminReportsController {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
    * 通報一覧
    * - 管理画面の「通報一覧」タブ用
+   * - ?postId=... で投稿単位の通報だけ取得できるようにする（AdminPostsの通報モーダル用）
+   * - ?status=reviewed|dismissed などで絞りたい場合にも備える（任意）
    */
   @Get()
-  async listReports() {
+  async listReports(
+    @Query('postId') postId?: string,
+    @Query('status') status?: string,
+  ) {
+    const where: any = {};
+    if (postId) where.postId = postId;
+    if (status) where.status = status;
+
     const reports = await this.prisma.report.findMany({
+      where: Object.keys(where).length ? where : undefined,
       orderBy: { createdAt: 'desc' },
       include: {
         post: {
@@ -40,21 +46,12 @@ export class AdminReportsController {
             creator: {
               select: {
                 publicName: true,
-                user: {
-                  select: {
-                    email: true,
-                  },
-                },
+                user: { select: { email: true } },
               },
             },
           },
         },
-        user: {
-          select: {
-            id: true,
-            email: true,
-          },
-        },
+        user: { select: { id: true, email: true } },
       },
     });
 
@@ -74,54 +71,37 @@ export class AdminReportsController {
     }));
   }
 
-  /**
-   * 通報詳細（必要なら）
-   */
+  /** 通報詳細（必要なら） */
   @Get(':id')
   async getReport(@Param('id') id: string) {
     const report = await this.prisma.report.findUnique({
       where: { id },
-      include: {
-        post: true,
-        user: true,
-      },
+      include: { post: true, user: true },
     });
 
-    if (!report) {
-      throw new BadRequestException('通報が見つかりません');
-    }
-
+    if (!report) throw new BadRequestException('通報が見つかりません');
     return report;
   }
 
   /**
-   * 通報対応（reviewed / dismissed に更新）
-   *
-   * フロントから:
+   * 通報対応（reviewed / dismissed）
    * PATCH /api/admin/reports/:id/resolve
-   * { "action": "reviewed" } or { "action": "dismissed" }
+   * body: { action: "reviewed" | "dismissed" }
    */
   @Patch(':id/resolve')
-  async resolveReport(
-    @Param('id') id: string,
-    @Body() body: ResolveReportBody,
-  ) {
+  async resolveReport(@Param('id') id: string, @Body() body: ResolveReportDto) {
     const { action } = body;
 
+    // DTOで弾けるなら本当は不要だけど、保険で残してOK
     if (!['reviewed', 'dismissed'].includes(action)) {
       throw new BadRequestException('invalid action');
     }
 
     const updated = await this.prisma.report.update({
       where: { id },
-      data: {
-        status: action, // Report.status は String なのでそのまま入れる
-      },
+      data: { status: action },
     });
 
-    return {
-      ok: true,
-      report: updated,
-    };
+    return { ok: true, report: updated };
   }
 }

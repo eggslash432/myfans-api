@@ -24,6 +24,14 @@ enum Role {
   creator
   admin
   sub_admin
+  shop_admin
+  shop_staff  
+}
+
+enum ShopMemberRole {
+  owner
+  admin
+  staff
 }
 
 enum CreatorApprovalStatus {
@@ -163,6 +171,21 @@ model Profile {
   updatedAt DateTime @updatedAt
 }
 
+model ShopMember {
+  id        String   @id @default(uuid())
+  shopId    String
+  userId    String
+  role      ShopMemberRole @default(staff)
+  createdAt DateTime @default(now())
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, userId])
+  @@index([userId])
+  @@index([shopId, role])
+}
+
 // ===== 30_creator_kyc.prisma =====
 //api/prisma/schema/30_creator_kyc.prisma
 
@@ -207,11 +230,13 @@ model Creator {
 model CreatorApplication {
   id     String @id @default(uuid())
   userId String
+  shopId String?           // 申請先の店
   creator Creator @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
   publicName  String
   bankAccount Json?
   status      CreatorApprovalStatus @default(pending)
+  join_shop   String @default("creator_onboarding")
   rejectReason String?
   createdAt   DateTime @default(now())
 

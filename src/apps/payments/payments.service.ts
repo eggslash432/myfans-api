@@ -4,7 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/apps/prisma/prisma.service';
 import Stripe from 'stripe';
-import { FeeSetting, Prisma } from '@prisma/client';
+import { FeeSetting, Payment, Prisma } from '@prisma/client';
 import { CreatePaymentWithShareArgs } from 'src/shared/types';
 
 @Injectable()
@@ -293,20 +293,20 @@ export class PaymentsService {
   async ensurePaymentByInvoice(
     invoiceId: string,
     data: Prisma.PaymentCreateInput,
-  ) {
+  ): Promise<Payment> {
     try {
       return await this.prisma.payment.create({
-        data: {
-          ...data,
-          externalTxId: invoiceId,
-        },
+        data: { ...data, externalTxId: invoiceId },
       });
     } catch (e: any) {
-      // Unique violation (externalTxId)
       if (e?.code === 'P2002') {
-        return await this.prisma.payment.findUnique({
+        const existing = await this.prisma.payment.findUnique({
           where: { externalTxId: invoiceId },
         });
+        if (!existing) {
+          throw new Error(`Payment not found after unique conflict. invoiceId=${invoiceId}`);
+        }
+        return existing;
       }
       throw e;
     }
@@ -314,8 +314,8 @@ export class PaymentsService {
 
   async createPaymentWithShareIdempotent(
     externalTxId: string,
-    build: () => Promise<Prisma.PaymentCreateInput>, // 必要なら同期でもOK
-  ) {
+    build: () => Promise<Prisma.PaymentCreateInput>,
+  ): Promise<Payment> {
     try {
       const data = await build();
       return await this.prisma.payment.create({
@@ -323,15 +323,26 @@ export class PaymentsService {
       });
     } catch (e: any) {
       if (e?.code === 'P2002') {
-        // externalTxId の unique で弾かれた = 既に作成済み
-        return await this.prisma.payment.findUnique({ where: { externalTxId } });
+        // externalTxId の unique で弾かれた = 既に作成済みのはず
+        const existing = await this.prisma.payment.findUnique({
+          where: { externalTxId },
+        });
+
+        // ★ここが重要：null を返さない
+        if (!existing) {
+          // ここに来るのは、競合やロールバック等で「create失敗したのに見つからない」異常系
+          throw new Error(`Payment not found after unique conflict. externalTxId=${externalTxId}`);
+        }
+        return existing;
       }
       throw e;
     }
-  }  
+  }
 
   // Payment + 分配（Creator / Platform）を externalTxId で冪等に作成
-  async createPaymentWithShareIdempotentV2(args: CreatePaymentWithShareArgs) {
+  async createPaymentWithShareIdempotentV2(
+    args: CreatePaymentWithShareArgs,
+  ): Promise<Payment> {
     const {
       userId,
       creatorId,
@@ -371,7 +382,7 @@ export class PaymentsService {
   /**
    * Payment + 分配（Creator / Platform）を作成する内部ヘルパー
    */
-  async createPaymentWithShare(params) {
+  async createPaymentWithShare(params: CreatePaymentWithShareArgs): Promise<Payment> {
     const {
       userId,
       creatorId,

@@ -8,6 +8,14 @@ enum Role {
   creator
   admin
   sub_admin
+  shop_admin
+  shop_staff  
+}
+
+enum ShopMemberRole {
+  owner
+  admin
+  staff
 }
 
 enum CreatorApprovalStatus {

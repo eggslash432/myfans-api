@@ -3,7 +3,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import Stripe from 'stripe';
-import { KycStatus, PaymentKind, PaymentStatus, SubStatus } from '@prisma/client';
+import {
+  KycStatus,
+  PaymentKind,
+  PaymentStatus,
+  SubStatus,
+  TransferKind,
+} from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PaymentsService } from './payments.service';
 
 @Injectable()
@@ -14,7 +21,7 @@ export class StripeWebhookService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly payments: PaymentsService,
-    private readonly config: ConfigService, // ✅ 追加
+    private readonly config: ConfigService,
   ) {
     const secret =
       process.env.STRIPE_SECRET_KEY ||
@@ -24,23 +31,36 @@ export class StripeWebhookService {
     this.stripe = new Stripe(secret, {});
   }
 
+  // ---------------------------
+  // Webhook入口：冪等 + ログ
+  // ---------------------------
   async processEvent(event: Stripe.Event) {
-    // ★ event.id を冪等キーにして “入口で重複排除”
-    const created = await this.tryCreateWebhookEvent(event);
-    if (!created) {
-      this.logger.log(`skip duplicate event: ${event.id} (${event.type})`);
-      return; // 既に処理済み or 受領済み
+    const gate = await this.ensureWebhookEvent(event);
+
+    // すでに完全処理済みならスキップ
+    if (gate.alreadyProcessed) {
+      this.logger.log(`skip processed event: ${event.id} (${event.type})`);
+      return;
     }
+
+    // 受信ログ
+    await this.logWebhook(gate.eventRowId, 'receive', true, `${event.type}`);
 
     try {
       switch (event.type) {
         case 'account.updated':
           await this.handleAccountUpdated(event.data.object as Stripe.Account);
+          await this.logWebhook(gate.eventRowId, 'handle.account.updated', true);
           break;
 
         case 'checkout.session.completed':
           await this.handleCheckoutSessionCompleted(
             event.data.object as Stripe.Checkout.Session,
+          );
+          await this.logWebhook(
+            gate.eventRowId,
+            'handle.checkout.session.completed',
+            true,
           );
           break;
 
@@ -50,11 +70,21 @@ export class StripeWebhookService {
           await this.handleSubscriptionUpdated(
             event.data.object as Stripe.Subscription,
           );
+          await this.logWebhook(
+            gate.eventRowId,
+            `handle.${event.type}`,
+            true,
+          );
           break;
 
         case 'invoice.payment_succeeded':
           await this.handleInvoicePaymentSucceeded(
             event.data.object as Stripe.Invoice,
+          );
+          await this.logWebhook(
+            gate.eventRowId,
+            'handle.invoice.payment_succeeded',
+            true,
           );
           break;
 
@@ -62,42 +92,95 @@ export class StripeWebhookService {
           await this.handlePaymentIntentSucceeded(
             event.data.object as Stripe.PaymentIntent,
           );
+          await this.logWebhook(
+            gate.eventRowId,
+            'handle.payment_intent.succeeded',
+            true,
+          );
           break;
 
         default:
+          await this.logWebhook(
+            gate.eventRowId,
+            'skip.unsupported',
+            true,
+            event.type,
+          );
           break;
       }
 
+      // 完了マーク
       await this.prisma.webhookEvent.update({
-        where: { id: created.id },
+        where: { id: gate.eventRowId },
         data: { processed: true, processedAt: new Date() },
       });
+      await this.logWebhook(gate.eventRowId, 'processed', true);
     } catch (e: any) {
-      // processed=false のまま残す（運用で再処理もしやすい）
+      await this.logWebhook(
+        gate.eventRowId,
+        'error',
+        false,
+        e?.stack || e?.message || String(e),
+      );
       this.logger.error(`event failed: ${event.id} (${event.type})`, e?.stack || e);
-      throw e; // controller に戻して 5xx → Stripe がリトライ
+      throw e; // 5xx -> Stripe retry
     }
   }
 
-    private async tryCreateWebhookEvent(event: Stripe.Event) {
+  /**
+   * WebhookEvent を冪等作成（Stripe event.id を idempotencyKey）
+   * - 既存が processed=true ならスキップ
+   * - processed=false なら再処理を許可（過去失敗のリトライ用）
+   */
+  private async ensureWebhookEvent(event: Stripe.Event): Promise<{
+    eventRowId: string;
+    alreadyProcessed: boolean;
+  }> {
+    const idempotencyKey = event.id;
+
     try {
-      return await this.prisma.webhookEvent.create({
+      const created = await this.prisma.webhookEvent.create({
         data: {
           provider: 'stripe',
           eventType: event.type,
-          idempotencyKey: event.id, // ★ここが肝
+          idempotencyKey,
           payload: event as any,
           processed: false,
         },
+        select: { id: true, processed: true },
       });
+      return { eventRowId: created.id, alreadyProcessed: false };
     } catch (e: any) {
-      if (e?.code === 'P2002') {
-        // 既に受領済み（または処理済み）
-        return null;
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        const existing = await this.prisma.webhookEvent.findUnique({
+          where: { idempotencyKey },
+          select: { id: true, processed: true },
+        });
+        if (!existing) throw e;
+        return { eventRowId: existing.id, alreadyProcessed: existing.processed };
       }
       throw e;
     }
-  }  
+  }
+
+  private async logWebhook(
+    eventRowId: string,
+    action: string,
+    success: boolean,
+    message?: string,
+  ) {
+    await this.prisma.webhookLog.create({
+      data: {
+        eventId: eventRowId,
+        action,
+        success,
+        message,
+      },
+    });
+  }
 
   // ✅ Connect口座の状態を Creator に同期
   async handleAccountUpdated(account: Stripe.Account) {
@@ -228,17 +311,15 @@ export class StripeWebhookService {
     );
   }
 
-  // ✅ 今回の修正点：Subscription未作成でもフォールバックしてPayment/Access付与まで通す
+  // ✅ Subscription未作成でもフォールバックしてPayment/Access付与まで通す
   async handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
     const inv = invoice as any;
     const subscriptionId = inv.subscription as string | null;
     if (!subscriptionId) return;
 
-    // ✅ shopId/chargeId を解決していく（invoiceだけに依存しない）
     let shopIdResolved: string | null =
       (invoice.metadata?.shopId as string | undefined) ?? null;
 
-    // invoice → payment_intent → latest_charge を取る（取れない場合もある）
     let chargeId: string | null = null;
     const invoicePiId =
       typeof inv.payment_intent === 'string' ? (inv.payment_intent as string) : null;
@@ -248,24 +329,23 @@ export class StripeWebhookService {
         const pi = await this.stripe.paymentIntents.retrieve(invoicePiId);
         chargeId = typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
 
-        // ✅ 念のため PI metadata も見る（将来/運用で入ることがある）
         shopIdResolved =
           shopIdResolved ?? ((pi.metadata?.shopId as string | undefined) ?? null);
       } catch (e: any) {
-        this.logger.warn(`invoice.payment_succeeded: failed to retrieve PI. pi=${invoicePiId}`, e?.message || e);
+        this.logger.warn(
+          `invoice.payment_succeeded: failed to retrieve PI. pi=${invoicePiId}`,
+          e?.message || e,
+        );
       }
     }
 
-    // 1) まずDBを探す（必要最小だけ）
     let dbSub = await this.prisma.subscription.findUnique({
       where: { stripeSubscriptionId: String(subscriptionId) },
       select: { userId: true, creatorId: true, planId: true },
     });
 
-    // ✅ Stripe subscription（metadata本命）を必要に応じて取る
     let stripeSub: Stripe.Subscription | null = null;
 
-    // 2) 無ければ Stripe から subscription を取得してDBに作る
     if (!dbSub) {
       this.logger.warn(
         `invoice.payment_succeeded: Subscription not found in DB. Fetching from Stripe... subId=${subscriptionId}`,
@@ -273,7 +353,6 @@ export class StripeWebhookService {
 
       stripeSub = await this.stripe.subscriptions.retrieve(String(subscriptionId));
 
-      // ✅ subscription metadata から shopId を拾う（invoiceよりこっちが入ってることが多い）
       shopIdResolved =
         shopIdResolved ?? ((stripeSub.metadata?.shopId as string | undefined) ?? null);
 
@@ -283,7 +362,6 @@ export class StripeWebhookService {
       let creatorId: string | undefined =
         (stripeSub.metadata?.creatorId ?? undefined) as string | undefined;
 
-      // creatorId が無ければ Plan から補完
       if (!creatorId && planId) {
         const plan = await this.prisma.plan.findUnique({
           where: { id: planId },
@@ -317,7 +395,6 @@ export class StripeWebhookService {
       const periodStart = new Date(periodStartSec * 1000);
       const periodEnd = new Date(periodEndSec * 1000);
 
-      // ✅ upsert（同時到達でも安全）
       await this.prisma.subscription.upsert({
         where: { stripeSubscriptionId: stripeSub.id },
         update: {
@@ -341,33 +418,25 @@ export class StripeWebhookService {
         },
       });
 
-      // 取り直し
       dbSub = await this.prisma.subscription.findUnique({
         where: { stripeSubscriptionId: String(subscriptionId) },
         select: { userId: true, creatorId: true, planId: true },
       });
-
-      if (!dbSub) {
-        this.logger.error(
-          `invoice.payment_succeeded: failed to create Subscription in DB. subId=${subscriptionId}`,
-        );
-        return;
-      }
+      if (!dbSub) return;
     } else {
-      // DBにある場合でも、shopIdを確実にしたいなら subscription を取りに行く（任意）
-      // ✅ ここは「shopIdResolved が null のときだけ」取りに行くのがコストと信頼性のバランス良い
       if (!shopIdResolved) {
         try {
           stripeSub = await this.stripe.subscriptions.retrieve(String(subscriptionId));
-          shopIdResolved =
-            (stripeSub.metadata?.shopId as string | undefined) ?? null;
+          shopIdResolved = (stripeSub.metadata?.shopId as string | undefined) ?? null;
         } catch (e: any) {
-          this.logger.warn(`invoice.payment_succeeded: failed to retrieve subscription for shopId. sub=${subscriptionId}`, e?.message || e);
+          this.logger.warn(
+            `invoice.payment_succeeded: failed to retrieve subscription for shopId. sub=${subscriptionId}`,
+            e?.message || e,
+          );
         }
       }
     }
 
-    // ✅ さらに最終保険：Creator.shopId にフォールバック（運用でmetadata欠落したとき救える）
     if (!shopIdResolved) {
       const c = await this.prisma.creator.findUnique({
         where: { userId: dbSub.creatorId },
@@ -376,37 +445,38 @@ export class StripeWebhookService {
       shopIdResolved = (c?.shopId as any) ?? null;
     }
 
-    // 3) amount
     const amountJpy =
       typeof invoice.amount_paid === 'number' && invoice.amount_paid > 0
         ? invoice.amount_paid
         : (typeof invoice.total === 'number' ? invoice.total : 0);
 
-    // ✅ Transfer（サブスクは invoice.id をキーに）
-    if (amountJpy > 0) {
-      await this.createSplitTransfers({
-        externalTxId: invoice.id,
-        amountJpy,
-        creatorId: dbSub.creatorId,
-        shopId: shopIdResolved,
-        chargeId, // ✅ source_transaction
-      });
-
-      // ✅ Payment 冪等
-      await this.payments.createPaymentWithShareIdempotentV2({
-        userId: dbSub.userId,
-        creatorId: dbSub.creatorId,
-        planId: dbSub.planId,
-        postId: null,
-        amountJpy,
-        kind: 'subscription',
-        externalTxId: invoice.id,
-      });
-    } else {
+    if (!amountJpy) {
       this.logger.warn(`invoice.payment_succeeded: amount is 0. invoiceId=${invoice.id}`);
+      return;
     }
 
-    // 4) plan投稿アクセス付与
+    // ✅ 先に Payment を作る（Transfer.paymentId 必須のため）
+    const payment = await this.payments.createPaymentWithShareIdempotentV2({
+      userId: dbSub.userId,
+      creatorId: dbSub.creatorId,
+      planId: dbSub.planId,
+      postId: null,
+      amountJpy,
+      kind: 'subscription',
+      externalTxId: invoice.id,
+    });
+
+    // ✅ その後に Transfer（Stripe送金 + DB Transfer）
+    await this.createSplitTransfers({
+      paymentId: payment.id,
+      externalTxId: invoice.id,
+      amountJpy,
+      creatorId: dbSub.creatorId,
+      shopId: shopIdResolved,
+      chargeId,
+    });
+
+    // plan投稿アクセス付与
     const posts = await this.prisma.post.findMany({
       where: {
         creatorId: dbSub.creatorId,
@@ -462,19 +532,10 @@ export class StripeWebhookService {
     }
 
     const shopId = (pi.metadata?.shopId as string | undefined) ?? null;
-
     const chargeId = typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
 
-    await this.createSplitTransfers({
-      externalTxId: pi.id,
-      amountJpy,
-      creatorId: resolvedCreatorId,
-      shopId,
-      chargeId, // ✅ source_transaction
-    }); 
-
-    // ✅ Paymentは「分配込み＋externalTxId=pi.id」で冪等作成（existsチェック不要）
-    await this.payments.createPaymentWithShareIdempotentV2({
+    // ✅ 先に Payment を作る
+    const payment = await this.payments.createPaymentWithShareIdempotentV2({
       userId,
       creatorId: resolvedCreatorId,
       planId: null,
@@ -484,7 +545,17 @@ export class StripeWebhookService {
       externalTxId: pi.id,
     });
 
-    // ✅ Accessは upsert なので何回走っても安全
+    // ✅ その後 Transfer
+    await this.createSplitTransfers({
+      paymentId: payment.id,
+      externalTxId: pi.id,
+      amountJpy,
+      creatorId: resolvedCreatorId,
+      shopId,
+      chargeId,
+    });
+
+    // Access は upsert なので安全
     await this.prisma.postAccess.upsert({
       where: { userId_postId: { userId, postId } },
       create: { userId, postId, expiresAt: null },
@@ -494,7 +565,7 @@ export class StripeWebhookService {
     this.logger.log(`PPV unlocked: user=${userId}, post=${postId} pi=${pi.id}`);
   }
 
-  // --- 追加：FeeSetting の取得（payments.service.ts と同じフェイルセーフ）---
+  // --- FeeSetting safe ---
   private async getFeeSettingSafe() {
     const fs = await this.prisma.feeSetting.findFirst();
     return (
@@ -508,7 +579,6 @@ export class StripeWebhookService {
     );
   }
 
-  // --- 追加：合計→3分割（端数はcreator寄せ）---
   private splitByFeeSetting(totalJpy: number, setting: any) {
     const manager = Math.floor((totalJpy * (setting.managerPercent ?? 0)) / 100);
     const shop = Math.floor((totalJpy * (setting.shopPercent ?? 0)) / 100);
@@ -516,17 +586,17 @@ export class StripeWebhookService {
     return { managerAmountJpy: manager, shopAmountJpy: shop, creatorAmountJpy: creator };
   }
 
-  // --- 追加：分割Transferを作成（idempotencyKey付き + source_transaction対応）---
+  // --- 分割Transfer：Stripe送金 + DB Transfer（paymentId 必須） ---
   private async createSplitTransfers(params: {
-    externalTxId: string;          // invoice.id or pi.id
+    paymentId: string;
+    externalTxId: string; // invoice.id or pi.id
     amountJpy: number;
     creatorId: string;
     shopId?: string | null;
-    chargeId?: string | null;      // ✅ 追加
+    chargeId?: string | null;
   }) {
-    const { externalTxId, amountJpy, creatorId, shopId, chargeId } = params;
+    const { paymentId, externalTxId, amountJpy, creatorId, shopId, chargeId } = params;
 
-    // creator の送金先
     const creator = await this.prisma.creator.findUnique({
       where: { userId: creatorId },
       select: { stripeAccountId: true },
@@ -539,23 +609,55 @@ export class StripeWebhookService {
     const feeSetting = await this.getFeeSettingSafe();
     const split = this.splitByFeeSetting(amountJpy, feeSetting);
 
-    // 70% → creator
+    // まず DBに platform 取り分（Stripe transfer は不要なのでローカルIDで冪等化）
+    if ((split.managerAmountJpy ?? 0) > 0) {
+      await this.prisma.transfer.upsert({
+        where: { stripeTransferId: `local_${externalTxId}_platform` },
+        update: { amountJpy: split.managerAmountJpy, destinationAcct: 'platform' },
+        create: {
+          paymentId,
+          kind: TransferKind.platform,
+          amountJpy: split.managerAmountJpy,
+          destinationAcct: 'platform',
+          stripeTransferId: `local_${externalTxId}_platform`,
+        },
+      });
+    }
+
+    // creator 送金（Stripe Transfer -> DB Transfer）
     if (split.creatorAmountJpy > 0) {
-      await this.stripe.transfers.create(
+      const tr = await this.stripe.transfers.create(
         {
           amount: split.creatorAmountJpy,
           currency: 'jpy',
           destination: creator.stripeAccountId,
           transfer_group: externalTxId,
-          source_transaction: chargeId ?? undefined, // ✅ 追加
+          source_transaction: chargeId ?? undefined,
           metadata: { kind: 'creator', creatorId, shopId: shopId ?? '' },
         },
         { idempotencyKey: `tr_${externalTxId}_creator` },
       );
+
+      await this.prisma.transfer.upsert({
+        where: { stripeTransferId: tr.id },
+        update: {
+          paymentId,
+          kind: TransferKind.creator,
+          amountJpy: split.creatorAmountJpy,
+          destinationAcct: creator.stripeAccountId,
+        },
+        create: {
+          paymentId,
+          kind: TransferKind.creator,
+          amountJpy: split.creatorAmountJpy,
+          destinationAcct: creator.stripeAccountId,
+          stripeTransferId: tr.id,
+        },
+      });
     }
 
-    // 10% → shop（shopId が無ければスキップ）
-    if (shopId) {
+    // shop 送金（shopId があるときのみ）
+    if (shopId && split.shopAmountJpy > 0) {
       const shop = await this.prisma.shop.findUnique({
         where: { id: shopId },
         select: { stripeAccountId: true },
@@ -566,19 +668,34 @@ export class StripeWebhookService {
         return;
       }
 
-      if (split.shopAmountJpy > 0) {
-        await this.stripe.transfers.create(
-          {
-            amount: split.shopAmountJpy,
-            currency: 'jpy',
-            destination: shop.stripeAccountId,
-            transfer_group: externalTxId,
-            source_transaction: chargeId ?? undefined, // ✅ 追加
-            metadata: { kind: 'shop', creatorId, shopId },
-          },
-          { idempotencyKey: `tr_${externalTxId}_shop` },
-        );
-      }
+      const tr = await this.stripe.transfers.create(
+        {
+          amount: split.shopAmountJpy,
+          currency: 'jpy',
+          destination: shop.stripeAccountId,
+          transfer_group: externalTxId,
+          source_transaction: chargeId ?? undefined,
+          metadata: { kind: 'shop', creatorId, shopId },
+        },
+        { idempotencyKey: `tr_${externalTxId}_shop` },
+      );
+
+      await this.prisma.transfer.upsert({
+        where: { stripeTransferId: tr.id },
+        update: {
+          paymentId,
+          kind: TransferKind.shop,
+          amountJpy: split.shopAmountJpy,
+          destinationAcct: shop.stripeAccountId,
+        },
+        create: {
+          paymentId,
+          kind: TransferKind.shop,
+          amountJpy: split.shopAmountJpy,
+          destinationAcct: shop.stripeAccountId,
+          stripeTransferId: tr.id,
+        },
+      });
     }
   }
 }

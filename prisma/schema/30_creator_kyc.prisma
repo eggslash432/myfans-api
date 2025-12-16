@@ -41,11 +41,13 @@ model Creator {
 model CreatorApplication {
   id     String @id @default(uuid())
   userId String
+  shopId String?           // 申請先の店
   creator Creator @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
   publicName  String
   bankAccount Json?
   status      CreatorApprovalStatus @default(pending)
+  join_shop   String @default("creator_onboarding")
   rejectReason String?
   createdAt   DateTime @default(now())
 

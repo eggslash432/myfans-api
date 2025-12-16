@@ -32,3 +32,5 @@ export type CreatePaymentWithShareArgs = {
   kind: PaymentKind;          // 'subscription' | 'one_time' など（あなたの Prisma に合わせる）
   externalTxId: string;       // invoice.id / payment_intent.id を入れる
 };
+
+export type ResolveAction = 'reviewed' | 'dismissed';
