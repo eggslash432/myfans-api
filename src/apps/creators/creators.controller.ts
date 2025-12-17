@@ -1,12 +1,24 @@
 // api/src/apps/creators/creators.controller.ts
 
 import {
-  Controller, Get, Post, Body, UseGuards, Request, Param, NotFoundException,
-  ForbiddenException, UnauthorizedException, BadRequestException, Req,
+  Controller,
+  Get,
+  Post,
+  Body,
+  UseGuards,
+  Request,
+  Param,
+  NotFoundException,
+  ForbiddenException,
+  UnauthorizedException,
+  BadRequestException,
+  Req,
   Patch,
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
+
+import { IS_MEDIA_LOCAL } from '../../shared/media-env';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatorsService } from './creators.service';
@@ -18,13 +30,17 @@ import { Roles } from '../auth/roles.decorator';
 import { UpdateCreatorProfileDto } from './dto/update-creator-profile.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { extname } from 'path';
-import { diskStorage } from 'multer';
+import { diskStorage, memoryStorage } from 'multer';
+
+// ✅ S3Service は使わない
+import { MediaStorageService } from '../storage/media-storage.service';
 
 @Controller('creators')
 export class CreatorsController {
   constructor(
     private readonly creatorsService: CreatorsService,
-    private prisma: PrismaService,
+    private readonly prisma: PrismaService,
+    private readonly mediaStorage: MediaStorageService,
   ) {}
 
   /* =====================================================
@@ -33,16 +49,9 @@ export class CreatorsController {
 
   @UseGuards(JwtAuthGuard)
   @Post('apply')
-  async applyCreator(
-    @Req() req,
-    @Body() dto: CreateCreatorDto,
-  ) {
+  async applyCreator(@Req() req, @Body() dto: CreateCreatorDto) {
     const userId = req.user.id;
-    if (!userId) {
-      throw new UnauthorizedException('JWTが無効です');
-    }
-
-    // ★ ロジックはすべて Service に任せる
+    if (!userId) throw new UnauthorizedException('JWTが無効です');
     return this.creatorsService.applyCreator(userId, dto);
   }
 
@@ -58,11 +67,7 @@ export class CreatorsController {
         publicName: true,
         _count: {
           select: {
-            posts: {
-              where: {
-                publishedStatus: PublishedStatus.published,
-              },
-            },
+            posts: { where: { publishedStatus: PublishedStatus.published } },
           },
         },
       },
@@ -105,19 +110,29 @@ export class CreatorsController {
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: 'uploads/creators',
-        filename: (req: any, file, cb) => {
-          const ext = extname(file.originalname);
-          cb(null, `creator-${req.user.id}-${Date.now()}${ext}`);
-        },
-      }),
+      storage: IS_MEDIA_LOCAL
+        ? diskStorage({
+            destination: 'uploads/creators',
+            filename: (req: any, file, cb) => {
+              const ext = extname(file.originalname);
+              cb(null, `creator-${req.user.id}-${Date.now()}${ext}`);
+            },
+          })
+        : memoryStorage(), // ✅ S3 のときは buffer を使う
       limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
   async uploadAvatar(@UploadedFile() file: any, @Req() req: any) {
     const userId = req.user.id;
-    const avatarUrl = `/uploads/creators/${file.filename}`;
+    if (!file) throw new BadRequestException('file is required');
+
+    // ✅ Controller は “保存先の差” を知らない（MediaStorageService に丸投げ）
+    const avatarUrl = await this.mediaStorage.saveCreatorAvatar({
+      userId,
+      // local: file.path / file.filename がある
+      // s3: file.buffer がある
+      file,
+    });
 
     await this.creatorsService.updateProfile(userId, { avatarUrl });
     return { url: avatarUrl };
@@ -154,22 +169,18 @@ export class CreatorsController {
     const role = req.user?.role;
 
     if (!userId) throw new UnauthorizedException('JWTが無効です');
-    if (![Role.creator, Role.admin].includes(role))
+    if (![Role.creator, Role.admin].includes(role)) {
       throw new ForbiddenException('クリエイターのみ投稿可能です');
+    }
 
     const creator = await this.prisma.creator.findUnique({ where: { userId } });
     if (!creator) throw new ForbiddenException('クリエイター登録が必要です');
 
-    if (
-      (dto.visibility === 'plan' || dto.visibility === 'paid_single') &&
-      !dto.priceJpy
-    ) {
+    if ((dto.visibility === 'plan' || dto.visibility === 'paid_single') && !dto.priceJpy) {
       throw new BadRequestException('有料/PPV は price が必要です');
     }
 
-    const status =
-      String((dto as any).publishedStatus ?? (dto as any).status).toUpperCase();
-
+    const status = String((dto as any).publishedStatus ?? (dto as any).status).toUpperCase();
     const publishedStatus =
       status === 'PUBLISHED'
         ? PublishedStatus.published
@@ -185,8 +196,7 @@ export class CreatorsController {
         visibility: dto.visibility,
         priceJpy: dto.priceJpy ?? null,
         publishedStatus,
-        publishedAt:
-          publishedStatus === PublishedStatus.published ? new Date() : null,
+        publishedAt: publishedStatus === PublishedStatus.published ? new Date() : null,
       },
     });
 
@@ -212,14 +222,10 @@ export class CreatorsController {
   @Get(':id/posts')
   async posts(@Param('id') id: string) {
     const posts = await this.prisma.post.findMany({
-      where: {
-        creatorId: id,
-        publishedStatus: PublishedStatus.published,
-      },
+      where: { creatorId: id, publishedStatus: PublishedStatus.published },
       orderBy: { publishedAt: 'desc' },
       take: 20,
     });
-
     return { items: posts };
   }
 
@@ -232,7 +238,6 @@ export class CreatorsController {
         plans: { where: { isActive: true } },
       },
     });
-
     if (!c) throw new NotFoundException('クリエイターが見つかりません');
 
     return {
@@ -246,15 +251,7 @@ export class CreatorsController {
   }
 
   @Post(':creatorId/plans/:planId/checkout')
-  async createCheckout(
-    @Param('creatorId') creatorId: string,
-    @Param('planId') planId: string,
-  ) {
-    return {
-      url: await this.creatorsService.createSubscriptionCheckout(
-        creatorId,
-        planId,
-      ),
-    };
+  async createCheckout(@Param('creatorId') creatorId: string, @Param('planId') planId: string) {
+    return { url: await this.creatorsService.createSubscriptionCheckout(creatorId, planId) };
   }
 }

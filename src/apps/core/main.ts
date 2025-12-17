@@ -9,8 +9,25 @@ import * as bodyParser from 'body-parser';
 import cookieParser from 'cookie-parser';
 import * as express from 'express';
 import { join } from 'path';
+import { mkdirSync } from 'fs';
+import { IS_MEDIA_LOCAL } from 'src/shared/media-env';
+
+function ensureUploadDirs() {
+  const dirs = [
+    'uploads',
+    'uploads/creators',
+    'uploads/posts',
+  ].map((p) => join(process.cwd(), p));
+
+  dirs.forEach((d) => mkdirSync(d, { recursive: true }));
+}
 
 async function bootstrap() {
+  // ✅ ローカルだけ作る（productionでは不要）
+  if (IS_MEDIA_LOCAL) {
+    ensureUploadDirs();
+  }
+
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.setGlobalPrefix('api');
@@ -24,8 +41,6 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       'http://localhost:5173',
-      'https://myfans-frontend.onrender.com',
-      'd2d1zk1rp5q7z8.cloudfront.net',
       'https://d2d1zk1rp5q7z8.cloudfront.net',
     ], // 'https://myfans-frontend-stg.vercel.app' なども追加可
     credentials: true,
@@ -37,8 +52,6 @@ async function bootstrap() {
   // Stripe Webhook は raw body 必須 → ルートに合わせて設定
   // 実装: @Post('webhooks/stripe') → /payments/webhooks/stripe
   app.use('/api/payments/webhook', bodyParser.raw({ type: 'application/json' }));
-
-  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
   // かつ bodyParser.json の verify で req.rawBody をセット
   app.use(
     bodyParser.json({

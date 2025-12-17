@@ -13,8 +13,9 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { AdminModule } from '../admin/admin.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { S3Service } from '../storage/s3.service';
-import { MediaController } from '../media/media.controller';
+import { join } from 'path';
+import { IS_MEDIA_LOCAL } from 'src/shared/media-env';
+import { ServeStaticModule } from '@nestjs/serve-static';
 
 @Module({
   imports: [
@@ -23,6 +24,19 @@ import { MediaController } from '../media/media.controller';
       load:[configuration],
       envFilePath: ['.env', '.env.local'], // 必要なら複数
     }), // ← これで process.env を読み込む
+    // ✅ ローカル開発だけ /uploads を静的配信
+    ...(IS_MEDIA_LOCAL
+      ? [
+          ServeStaticModule.forRoot({
+            rootPath: join(process.cwd(), 'uploads'), // uploads/* を配信
+            serveRoot: '/uploads', // URL は /uploads/...
+            serveStaticOptions: {
+              // キャッシュが邪魔なら短め（dev向け）
+              maxAge: 0,
+            },
+          }),
+        ]
+      : []),    
     UsersModule,
     AuthModule,
     CreatorsModule,
@@ -35,11 +49,9 @@ import { MediaController } from '../media/media.controller';
   ],
   providers: [
     AppService,
-    S3Service,
   ],
   controllers:[
     AppController,
-    MediaController,
   ],
 })
 export class AppModule {}

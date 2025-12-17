@@ -8,12 +8,14 @@ import { ConfigModule } from '@nestjs/config';
 import { CreatorKycController } from './creator-kyc.controller';
 import { CreatorApplicationsController } from './creator-applications.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
     HelpersModule, 
     ConfigModule,
     NotificationsModule,
+    StorageModule,
   ],
   controllers: [
     CreatorsController, 

@@ -270,11 +270,17 @@ export class PostsService {
     });
   }
 
-
   async attachMediaToPost(
     postId: string,
     userId: string,
-    files: Express.Multer.File[],
+    media: Array<{
+      url: string;
+      // どれで来てもOKにする
+      mime?: string;
+      mimetype?: string;
+      contentType?: string;
+      originalName?: string;
+    }>,
     sampleIdx?: number,
   ) {
     const post = await this.prisma.post.findUnique({
@@ -287,27 +293,48 @@ export class PostsService {
       throw new ForbiddenException('自分の投稿のみ編集できます');
     }
 
-    const existingCount = await this.prisma.postMedia.count({
-      where: { postId }, // ← ここは postId 引数があるのでOK
-    });
+    const existingCount = await this.prisma.postMedia.count({ where: { postId } });
 
-    await this.prisma.postMedia.createMany({
-      data: files.map((f, idx) => {
-        const mime = f.mimetype ?? '';
-        const mediaType =
-          mime.startsWith('video/') ? MediaType.video :
-          mime.startsWith('audio/') ? MediaType.audio :
-          MediaType.image;
+    // mime が無い時の推定（最低限）
+    const guessMediaType = (url: string, mime?: string) => {
+      const m = (mime ?? '').toLowerCase();
 
+      if (m.startsWith('video/')) return MediaType.video;
+      if (m.startsWith('audio/')) return MediaType.audio;
+      if (m.startsWith('image/')) return MediaType.image;
+
+      // URL拡張子で推定
+      const lower = (url ?? '').toLowerCase();
+      if (lower.match(/\.(mp4|mov|webm|m4v)(\?|#|$)/)) return MediaType.video;
+      if (lower.match(/\.(mp3|wav|m4a|aac|ogg)(\?|#|$)/)) return MediaType.audio;
+      if (lower.match(/\.(png|jpe?g|gif|webp|avif)(\?|#|$)/)) return MediaType.image;
+
+      // 不明は image 扱い（UI崩壊を避ける）
+      return MediaType.image;
+    };
+
+    const rows = (media ?? [])
+      .filter((m) => !!m?.url)
+      .map((m, idx) => {
+        const mime = m.mime ?? m.mimetype ?? m.contentType ?? '';
         return {
           postId,
-          url: `/uploads/posts/${f.filename}`,
-          mediaType,
+          url: m.url, // /uploads/... をそのまま保存
+          mediaType: guessMediaType(m.url, mime),
           sortOrder: existingCount + idx,
           isSample: sampleIdx === idx,
         };
-      }),
-    });
+      });
+
+    if (rows.length === 0) {
+      // 0件は普通に空返しでもいいけど、ここは好み
+      return this.prisma.postMedia.findMany({
+        where: { postId },
+        orderBy: { sortOrder: 'asc' },
+      });
+    }
+
+    await this.prisma.postMedia.createMany({ data: rows });
 
     return this.prisma.postMedia.findMany({
       where: { postId },

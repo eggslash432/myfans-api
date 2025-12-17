@@ -1,27 +1,54 @@
 // api/src/apps/storage/s3.service.ts
-
 import { Injectable } from '@nestjs/common';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
-import { 
-  S3Client, 
-  PutObjectCommand, 
-  DeleteObjectCommand, 
-  DeleteObjectsCommand 
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
+import { createReadStream } from 'fs';
+import { extname } from 'path';
 
 @Injectable()
 export class S3Service {
+  // ✅ 初期化では落ちない
   private readonly client = new S3Client({
     region: process.env.AWS_REGION,
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-    },
   });
 
+  // =====================================================
+  // 内部ユーティリティ
+  // =====================================================
+  private assertS3Enabled() {
+    const driver = (process.env.MEDIA_DRIVER ?? 'local').toLowerCase();
+
+    if (driver !== 's3') {
+      throw new Error(
+        `S3Service called but MEDIA_DRIVER=${driver} (expected "s3")`,
+      );
+    }
+
+    const bucket = process.env.MEDIA_BUCKET_NAME;
+    const baseUrl = process.env.MEDIA_BASE_URL;
+
+    if (!bucket) {
+      throw new Error('S3Service: MEDIA_BUCKET_NAME is not set');
+    }
+    if (!baseUrl) {
+      throw new Error('S3Service: MEDIA_BASE_URL is not set');
+    }
+
+    return { bucket, baseUrl };
+  }
+
+  // =====================================================
+  // Presigned URL
+  // =====================================================
   async createUploadUrl(opts: { fileName: string; contentType: string }) {
-    const bucket = process.env.MEDIA_BUCKET_NAME!;
+    const { bucket, baseUrl } = this.assertS3Enabled();
+
     const ext = opts.fileName.split('.').pop() || 'bin';
     const key = `posts/${randomUUID()}.${ext}`;
 
@@ -29,53 +56,92 @@ export class S3Service {
       Bucket: bucket,
       Key: key,
       ContentType: opts.contentType,
-      // ACL はバケットポリシー次第。とりあえず private のままでOK
     });
 
     const uploadUrl = await getSignedUrl(this.client, command, {
-      expiresIn: 60 * 5, // 5分有効
+      expiresIn: 60 * 5,
     });
 
-    const fileUrl = `${process.env.MEDIA_BASE_URL}/${key}`;
-    return { uploadUrl, fileUrl, key };
+    return {
+      uploadUrl,
+      fileUrl: `${baseUrl.replace(/\/+$/, '')}/${key}`,
+      key,
+    };
   }
 
-  // ★ 追加：サーバ側から直接アップロードする用
-  async uploadPostFileBuffer(params: {
-    postId: string;
-    fileName: string;
+  // =====================================================
+  // Buffer upload
+  // =====================================================
+  async uploadBuffer(params: {
+    key: string;
     contentType: string;
     buffer: Buffer;
   }): Promise<string> {
-    const bucket = process.env.MEDIA_BUCKET_NAME!;
-    const ext = params.fileName.split('.').pop() || 'bin';
-    const key = `posts/${params.postId}/${randomUUID()}.${ext}`;
+    const { bucket, baseUrl } = this.assertS3Enabled();
 
     await this.client.send(
       new PutObjectCommand({
         Bucket: bucket,
-        Key: key,
+        Key: params.key,
         Body: params.buffer,
         ContentType: params.contentType,
       }),
     );
 
-    const base = (process.env.MEDIA_BASE_URL || '').replace(/\/+$/, '');
-    return `${base}/${key}`;
-  }  
+    return `${baseUrl.replace(/\/+$/, '')}/${params.key}`;
+  }
 
+  async putObject(params: {
+    key: string;
+    contentType: string;
+    buffer: Buffer;
+  }) {
+    const { bucket } = this.assertS3Enabled();
+
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: params.key,
+        Body: params.buffer,
+        ContentType: params.contentType,
+      }),
+    );
+  }
+
+  // =====================================================
+  // File path (stream) upload
+  // =====================================================
+  async uploadFilePath(params: {
+    key: string;
+    contentType: string;
+    filePath: string;
+  }): Promise<string> {
+    const { bucket, baseUrl } = this.assertS3Enabled();
+
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: params.key,
+        Body: createReadStream(params.filePath),
+        ContentType: params.contentType,
+      }),
+    );
+
+    return `${baseUrl.replace(/\/+$/, '')}/${params.key}`;
+  }
+
+  // =====================================================
+  // Delete
+  // =====================================================
   async deleteKeys(keys: string[]) {
-    const bucket = process.env.MEDIA_BUCKET_NAME!;
+    const { bucket } = this.assertS3Enabled();
+
     const uniq = Array.from(new Set(keys)).filter(Boolean);
     if (uniq.length === 0) return;
 
-    // DeleteObjects は最大 1000 件/回
-    const chunks: string[][] = [];
     for (let i = 0; i < uniq.length; i += 1000) {
-      chunks.push(uniq.slice(i, i + 1000));
-    }
+      const chunk = uniq.slice(i, i + 1000);
 
-    for (const chunk of chunks) {
       if (chunk.length === 1) {
         await this.client.send(
           new DeleteObjectCommand({
@@ -96,7 +162,6 @@ export class S3Service {
         }),
       );
 
-      // 失敗が混ざってたら止める（DB削除しない）
       const errors = res.Errors ?? [];
       if (errors.length > 0) {
         const msg = errors
@@ -107,4 +172,22 @@ export class S3Service {
     }
   }
 
+  // =====================================================
+  // Convenience
+  // =====================================================
+  async uploadCreatorAvatar(params: {
+    creatorUserId: string;
+    fileName: string;
+    contentType: string;
+    buffer: Buffer;
+  }) {
+    const ext = (extname(params.fileName) || '.png').toLowerCase();
+    const key = `uploads/creators/creator-${params.creatorUserId}-${Date.now()}${ext}`;
+    const url = await this.uploadBuffer({
+      key,
+      contentType: params.contentType,
+      buffer: params.buffer,
+    });
+    return { key, url };
+  }
 }

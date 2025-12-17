@@ -11,8 +11,12 @@ import { AdminSettingsController } from './admin-settings.controller';
 import { AdminUsersController } from './admin-users.controller';
 import { S3Service } from '../storage/s3.service';
 import { PostDeleteService } from '../posts/post-delete.service';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
+  imports: [
+    StorageModule,
+  ],
   controllers: [
     AdminCreatorsController, 
     AdminPostsController,

@@ -23,15 +23,19 @@ import { PostsService } from './posts.service';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UserJwt } from 'src/shared/types';
+
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import sharp from 'sharp';
 import { promises as fs } from 'fs';
+
 import { UpdatePostDto } from './dto/update-post.dto';
-import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PostDeleteService } from './post-delete.service';
+
+// ✅ S3Service は使わない（切替は Storage 側へ委譲）
+import { MediaStorageService } from '../storage/media-storage.service';
 
 @Controller('posts')
 export class PostsController {
@@ -39,19 +43,32 @@ export class PostsController {
     private readonly postsService: PostsService,
     private readonly prisma: PrismaService,
     private readonly postDelete: PostDeleteService,
+    private readonly mediaStorage: MediaStorageService,
   ) {}
 
+  // ==============================
+  // Public feed
+  // GET /posts
+  // ==============================
   @Get()
   async listPublicPosts() {
     const items = await this.postsService.getPublicFeed();
     return { items };
   }
 
+  // ==============================
+  // Admin posts (public)
+  // GET /posts/public/admin
+  // ==============================
   @Get('public/admin')
   async getAdminPosts() {
     return this.postsService.getAdminPosts(5);
-  }    
+  }
 
+  // ==============================
+  // My posts
+  // GET /posts/me
+  // ==============================
   @UseGuards(JwtAuthGuard)
   @Get('me')
   async getMyPosts(@Req() req: any) {
@@ -59,7 +76,7 @@ export class PostsController {
     if (!userId) throw new UnauthorizedException('JWTが無効です');
 
     const posts = await this.prisma.post.findMany({
-      where: { creatorId: userId }, // ← あなたのDB設計だと creatorId=userId
+      where: { creatorId: userId },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -76,6 +93,10 @@ export class PostsController {
     return { items: posts };
   }
 
+  // ==============================
+  // Post detail (optional login)
+  // GET /posts/:id
+  // ==============================
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
   async getPost(@Param('id') id: string, @Req() req: any) {
@@ -88,6 +109,10 @@ export class PostsController {
     return detail;
   }
 
+  // ==============================
+  // Report
+  // POST /posts/:id/report
+  // ==============================
   @UseGuards(JwtAuthGuard)
   @PostMethod(':id/report')
   async reportPost(
@@ -102,26 +127,22 @@ export class PostsController {
     return this.postsService.reportPost(user.id, id, reason);
   }
 
-  // --------------------------------------------------
-  // 投稿メディアのアップロード
+  // ==============================
+  // Upload media
   // POST /posts/:id/media
-  // --------------------------------------------------
+  // ==============================
   @UseGuards(JwtAuthGuard)
   @PostMethod(':id/media')
   @UseInterceptors(
-    // ★ ここは「大きめ」にしておく（DB設定で実際の制限を判定する）
-    // maxFiles も DB で制限するので、ここは大きめでOK
     FilesInterceptor('files', 20, {
       storage: diskStorage({
-        destination: 'uploads/posts',
+        destination: 'tmp/uploads/posts',
         filename: (req, file, cb) => {
           const ext = extname(file.originalname);
-          const name = `post-${req.params.id}-${Date.now()}${ext}`;
-          cb(null, name);
+          cb(null, `post-${req.params.id}-${Date.now()}${ext}`);
         },
       }),
-      // ★ multer の fileSize 制限に引っかかると DB 参照前に落ちるので
-      //    いったん大きめにして「後でDB設定で落とす」
+      // multer で落とさない（本当の制限はDB設定で）
       limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB
     }),
   )
@@ -134,7 +155,7 @@ export class PostsController {
     const user = req.user as UserJwt | undefined;
     if (!user?.id) throw new ForbiddenException('ログインが必要です');
 
-    // ★ DBのアップロード設定を読む（無ければデフォルト）
+    // DBのアップロード設定を読む（無ければデフォルト）
     const setting = await this.prisma.uploadSetting.findUnique({
       where: { id: 1 },
     });
@@ -143,22 +164,28 @@ export class PostsController {
     const maxFileSizeMb = setting?.maxFileSizeMb ?? 20;
     const maxBytes = maxFileSizeMb * 1024 * 1024;
 
-    // ---- まず枚数制限（超えてたら保存済みを削除）----
+    // ---- 枚数制限（超えてたら tmp を削除して落とす）----
     if ((files?.length ?? 0) > maxFiles) {
-      await Promise.all((files ?? []).map((f) => fs.unlink(f.path).catch(() => {})));
-      throw new BadRequestException(`ファイル数が上限を超えています（最大 ${maxFiles} 件）`);
+      await Promise.all(
+        (files ?? []).map((f) => fs.unlink(f.path).catch(() => {})),
+      );
+      throw new BadRequestException(
+        `ファイル数が上限を超えています（最大 ${maxFiles} 件）`,
+      );
     }
 
-    // ---- 次にサイズ制限（超えてたら保存済みを削除）----
+    // ---- サイズ制限（超えてたら tmp を削除して落とす）----
     const tooLarge = (files ?? []).find((f) => (f.size ?? 0) > maxBytes);
     if (tooLarge) {
-      await Promise.all((files ?? []).map((f) => fs.unlink(f.path).catch(() => {})));
+      await Promise.all(
+        (files ?? []).map((f) => fs.unlink(f.path).catch(() => {})),
+      );
       throw new PayloadTooLargeException(
         `ファイルサイズが上限を超えています（最大 ${maxFileSizeMb}MB）`,
       );
     }
 
-    // 画像だけリサイズ（あなたの処理はそのままOK）
+    // ---- 画像だけリサイズ（tmp 上で）----
     await Promise.all(
       (files ?? [])
         .filter((f) => f.mimetype.startsWith('image/'))
@@ -190,7 +217,7 @@ export class PostsController {
         }),
     );
 
-    // ★ sampleIndex の確定（NaN / 範囲外は無効）
+    // sampleIndex の確定（NaN / 範囲外は無効）
     const raw = sampleIndex !== undefined ? Number(sampleIndex) : null;
     const sampleIdx =
       raw !== null &&
@@ -200,17 +227,33 @@ export class PostsController {
         ? raw
         : null;
 
-    // attachMediaToPost 側で sampleIdx を扱う想定
+    // ✅ tmp -> localならuploadsへ移動 / s3ならuploadしてtmp削除 を MediaStorageService に委譲
+    const uploadedMedia = await Promise.all(
+      (files ?? []).map(async (f) => {
+        const url = await this.mediaStorage.savePostFileFromTemp({
+          postId,
+          tmpPath: f.path,
+          originalName: f.originalname,
+          contentType: f.mimetype,
+        });
+        return { url, mime: f.mimetype, originalName: f.originalname };
+      }),
+    );
+
     const items = await this.postsService.attachMediaToPost(
       postId,
       user.id,
-      files,
+      uploadedMedia,
       sampleIdx ?? undefined,
     );
 
     return { ok: true, items };
   }
 
+  // ==============================
+  // Update my post
+  // PATCH /posts/me/:id
+  // ==============================
   @UseGuards(JwtAuthGuard)
   @Patch('me/:id')
   async updateMyPost(
@@ -223,17 +266,25 @@ export class PostsController {
     return this.postsService.updateMyPost(userId, id, dto);
   }
 
+  // ==============================
+  // Delete my post
+  // DELETE /posts/me/:id
+  // ==============================
   @UseGuards(JwtAuthGuard)
   @Delete('me/:id')
   async deleteMyPost(@Req() req: any, @Param('id') id: string) {
     const user = req.user as UserJwt | undefined;
     if (!user?.id) throw new UnauthorizedException('ログインが必要です');
     return this.postDelete.deleteAsCreator(id, user.id);
-  }  
+  }
 
-  @Get()
+  // ==============================
+  // Alternate list endpoint (avoid @Get() collision)
+  // GET /posts/list?official=1
+  // ==============================
+  @Get('list')
   list(@Query('official') official?: string) {
     const onlyOfficial = official === '1' || official === 'true';
     return this.postsService.listPublic({ onlyOfficial });
-  }  
+  }
 }
