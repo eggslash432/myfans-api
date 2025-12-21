@@ -26,14 +26,25 @@ aws ecs update-service \
   --force-new-deployment
 
 
-AWSへのデータベースのmigrate：
+⚪︎AWSへのデータベースのmigrate
 ECSのタスクの実行で
 Vpcやらセキュリティグループを設定した後、（vpcはprivateのやつだけ選択、セキュリティグループはtask-sgみたいなやつ）
 コンテナの上書きのコマンドで
+
 sh
 -c
 npx prisma migrate deploy
+
 これでprismaをmigrateできる
+
+⚪︎Macからpsqlで本番環境へ接続
+psql \
+  -h himefan-database1.cfqesa8wu2qz.ap-northeast-1.rds.amazonaws.com \
+  -p 5432 \
+  -U postgres \
+  -d himefan_database1
+
+  パスワード：.env.prodに書いてる
 
 
 「分割したPrismaの統合、マイグレーション」
