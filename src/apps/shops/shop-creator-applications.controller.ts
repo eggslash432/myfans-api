@@ -6,11 +6,15 @@ import {
   Req,
   ForbiddenException,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatorApprovalStatus } from '@prisma/client';
 import type { Request } from 'express';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
+
+@UseGuards(JwtAuthGuard)
 @Controller('shops')
 export class ShopCreatorApplicationsController {
   constructor(

@@ -276,6 +276,19 @@ model Shop {
   creators Creator[]
   members     ShopMember[]
   applications CreatorApplication[]
+  invites ShopInvite[] @relation("ShopInvites")
+}
+
+model ShopInvite {
+  id        String   @id @default(cuid())
+  shopId    String
+  code      String   @unique
+  role      ShopMemberRole @default(staff)
+  createdBy String
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+
+  shop      Shop     @relation("ShopInvites", fields: [shopId], references: [id], onDelete: Cascade)
 }
 
 // ===== 40_plan_subscription.prisma =====

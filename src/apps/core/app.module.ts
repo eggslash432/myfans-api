@@ -16,6 +16,7 @@ import { AppService } from './app.service';
 import { join } from 'path';
 import { IS_MEDIA_LOCAL } from 'src/shared/media-env';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { ShopsModule } from '../shops/shops.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { ServeStaticModule } from '@nestjs/serve-static';
     UsersMeSummaryModule,
     PaymentsModule,
     SubscriptionsModule,
+    ShopsModule,
   ],
   providers: [
     AppService,

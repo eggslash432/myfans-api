@@ -7,12 +7,15 @@ import {
   Req,
   BadRequestException,
   ForbiddenException,
+  UseGuards,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Request } from 'express';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 type Range = 'today' | 'month' | 'all';
 
+@UseGuards(JwtAuthGuard)
 @Controller('shops')
 export class ShopSalesController {
   constructor(
