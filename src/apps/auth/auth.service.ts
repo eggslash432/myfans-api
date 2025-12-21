@@ -16,7 +16,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 
 type JwtPayload = {
   sub: string;
-  role?: Role | null;
+  role: Role;
   email?: string;
 };
 
@@ -39,7 +39,7 @@ export class AuthService {
       data: {
         email,
         passwordHash,
-        role: null, //一般ユーザーは role=null（運営のみ role を持つ）
+        role: Role.user, 
       },
       select: { id: true, email: true, role: true },
     });
@@ -94,12 +94,12 @@ export class AuthService {
 
   private async signAccessToken(
     userId: number | string,
-    role?: Role | null,
+    role: Role,
     email?: string,
   ) {
     const payload: JwtPayload = {
       sub: String(userId),
-      role: role ?? null,
+      role: role,
       email,
     };
 
@@ -111,12 +111,12 @@ export class AuthService {
 
   private async signRefreshToken(
     userId: number | string,
-    role?: Role | null,
+    role: Role,
     email?: string,
   ) {
     const payload: JwtPayload = {
       sub: String(userId),
-      role: role ?? null,
+      role: role,
       email,
     };
 
