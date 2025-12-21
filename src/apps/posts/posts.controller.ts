@@ -287,4 +287,14 @@ export class PostsController {
     const onlyOfficial = official === '1' || official === 'true';
     return this.postsService.listPublic({ onlyOfficial });
   }
+
+  @Get('by-genre/:genreId')
+  async listByGenre(@Param('genreId') genreId: string) {
+    if (!genreId) {
+      throw new BadRequestException('genreId is required');
+    }
+
+    const items = await this.postsService.listByGenre(genreId);
+    return { items };
+  }  
 }

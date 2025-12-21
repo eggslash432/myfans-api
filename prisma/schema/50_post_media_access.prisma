@@ -4,6 +4,7 @@ model Post {
   id        String @id @default(uuid())
   creatorId String?
   planId    String?
+  genreId   String?
 
   creator Creator? @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
   plan    Plan?    @relation(fields: [planId], references: [id])

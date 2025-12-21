@@ -1,27 +1,33 @@
 // src/apps/posts/dto/create-post.dto.ts
 import {
-  IsString, IsEnum, IsOptional, IsArray, IsBoolean, IsInt, Min, ValidateNested, ValidateIf,
+  IsString, IsEnum, IsOptional, IsArray, IsBoolean, IsInt, Min,
+  ValidateNested, ValidateIf,
+  ValidationOptions, registerDecorator,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { AgeRating, PublishedStatus, Visibility, MediaType} from '@prisma/client';
 import { AgeRatingEnum, PublishedStatusEnum, VisibilityEnum, MediaTypeEnum } from 'src/shared/enums';
 
 class AccessRulesDto {
-  @IsArray() @IsOptional()
+  @IsArray()
+  @IsOptional()
   allowByPlanIds?: string[] = [];
 
+  @IsOptional()
   @IsBoolean()
-  allowByPpv!: boolean;
+  allowByPpv?: boolean = false;
 
-  @IsInt() @Min(100) @IsOptional()
-  ppvPriceJpy?: number; // allowByPpv=true のときに使用
+  @IsInt()
+  @Min(100)
+  @IsOptional()
+  ppvPriceJpy?: number;
 }
 
 export class CreatePostMediaDto {
-  @IsEnum(MediaTypeEnum) mediaType!: MediaTypeEnum;
+  @IsEnum(MediaTypeEnum)
+  mediaType!: MediaTypeEnum;
 
   @IsString()
-  url: string;
+  url!: string;
 
   @IsInt()
   @IsOptional()
@@ -32,33 +38,59 @@ export class CreatePostMediaDto {
   isSample?: boolean;
 }
 
+function HasAtMostOneSample(validationOptions?: ValidationOptions) {
+  return function (object: any, propertyName: string) {
+    registerDecorator({
+      name: 'hasAtMostOneSample',
+      target: object.constructor,
+      propertyName,
+      options: validationOptions,
+      validator: {
+        validate(value: any) {
+          if (!Array.isArray(value)) return true;
+          const n = value.filter((v) => v?.isSample === true).length;
+          return n <= 1;
+        },
+      },
+    });
+  };
+}
+
 export class CreatePostDto {
-  @IsString() title!: string;
-  @IsString() body!: string;
+  @IsString()
+  title!: string;
 
-  @IsEnum(VisibilityEnum) visibility!: VisibilityEnum;
-  @IsEnum(AgeRatingEnum) ageRating!: AgeRatingEnum;
+  @IsString()
+  body!: string;
 
-  // visibility=plan のときのみ検証
-  @ValidateIf(o => o.visibility === VisibilityEnum.plan)
+  @IsEnum(VisibilityEnum)
+  visibility!: VisibilityEnum;
+
+  @IsEnum(AgeRatingEnum)
+  ageRating!: AgeRatingEnum;
+
+  @ValidateIf((o) => o.visibility === VisibilityEnum.plan)
   @IsString()
   planId?: string;
 
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreatePostMediaDto)
-  @IsOptional()
+  @HasAtMostOneSample({ message: 'サンプルは1つまで選択できます' })
   media?: CreatePostMediaDto[];
 
-  // visibility=paid_single のときのみ検証
-  @ValidateIf(o => o.visibility === VisibilityEnum.paid_single)
-  @IsInt() @Min(100)
+  @ValidateIf((o) => o.visibility === VisibilityEnum.paid_single)
+  @IsInt()
+  @Min(100)
   priceJpy?: number;
 
-  // 受け取ってよい（下書きフラグ）
-  @IsEnum(PublishedStatusEnum) @IsOptional()
+  @IsEnum(PublishedStatusEnum)
+  @IsOptional()
   publishedStatus?: PublishedStatusEnum;
 
-  @ValidateNested() @Type(() => AccessRulesDto)
-  accessRules!: AccessRulesDto;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AccessRulesDto)
+  accessRules?: AccessRulesDto;
 }

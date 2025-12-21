@@ -37,6 +37,11 @@ export class UpdatePostMediaDto {
   @IsOptional()
   @IsInt()
   sortOrder?: number;
+
+  // ✅ 追加
+  @IsOptional()
+  @IsString()
+  genreId?: string | null;  
 }
 
 /**

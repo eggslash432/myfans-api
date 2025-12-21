@@ -434,4 +434,28 @@ export class PostsService {
       take: 20,
     });
   }  
+
+  async listByGenre(genreId: string) {
+    return this.prisma.post.findMany({
+      where: {
+        genreId,
+        publishedStatus: 'published', // ← あなたの既存ルールに合わせて
+        visibility: Visibility.free,         // ← 必要なら
+      },
+      orderBy: {
+        publishedAt: 'desc',
+      },
+      take: 50,
+      select: {
+        id: true,
+        title: true,
+        body: true,
+        publishedAt: true,
+        createdAt: true,
+        priceJpy: true,
+        creatorId: true,
+        genreId: true,
+      },
+    });
+  }
 }
