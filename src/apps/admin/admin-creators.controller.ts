@@ -9,12 +9,13 @@ import {
   Query,
   UseGuards,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminOnlyGuard } from '../access-control/admin-only.guard';
 import { IsBoolean, IsOptional, IsString } from 'class-validator';
-import { CreatorApprovalStatus, Role } from '@prisma/client';
+import { CreatorApprovalStatus } from '@prisma/client';
 
 class UpdateListingBody {
   @IsBoolean()
@@ -32,8 +33,8 @@ export class AdminCreatorsController {
   constructor(private readonly prisma: PrismaService) {}
 
   // ============================
-  // クリエイター申請一覧（審査待ち）
-  // GET /admin/creators/applications
+  // クリエイター申請一覧（審査待ち/承認済み/却下など）
+  // GET /admin/creators/applications?status=pending&q=xxx
   // ============================
   @Get('applications')
   async listApplications(
@@ -42,14 +43,18 @@ export class AdminCreatorsController {
   ) {
     const where: any = {};
 
-    if (status) where.approvalStatus = status as any;
+    if (status) where.approvalStatus = status;
 
     if (q?.trim()) {
       const keyword = q.trim();
       where.OR = [
         { publicName: { contains: keyword, mode: 'insensitive' } },
         { user: { email: { contains: keyword, mode: 'insensitive' } } },
-        { user: { profile: { displayName: { contains: keyword, mode: 'insensitive' } } } },
+        {
+          user: {
+            profile: { is: { displayName: { contains: keyword, mode: 'insensitive' } } },
+          },
+        },
       ];
     }
 
@@ -65,6 +70,7 @@ export class AdminCreatorsController {
         approvedAt: true,
         rejectedAt: true,
         rejectReason: true,
+        isListed: true,
         user: {
           select: {
             email: true,
@@ -72,26 +78,27 @@ export class AdminCreatorsController {
           },
         },
         _count: { select: { applications: true } },
-        applications: { 
-          orderBy: { createdAt: 'desc' }, 
-          take: 1, 
-          select: { createdAt: true } 
-        },        
+        applications: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { createdAt: true },
+        },
       },
     });
 
     return {
-      items: rows.map(r => ({
+      items: rows.map((r) => ({
         userId: r.userId,
         email: r.user.email,
         displayName: r.user.profile?.displayName ?? null,
         publicName: r.publicName,
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
-        approvalStatus: (r as any).approvalStatus,
-        approvedAt: (r as any).approvedAt ?? null,
-        rejectedAt: (r as any).rejectedAt ?? null,
-        rejectReason: (r as any).rejectReason ?? null,
+        approvalStatus: r.approvalStatus,
+        approvedAt: r.approvedAt ?? null,
+        rejectedAt: r.rejectedAt ?? null,
+        rejectReason: r.rejectReason ?? null,
+        isListed: r.isListed,
         applicationCount: r._count.applications,
         lastAppliedAt: r.applications[0]?.createdAt ?? null,
       })),
@@ -105,11 +112,17 @@ export class AdminCreatorsController {
   @Patch('applications/:userId/approve')
   async approve(@Param('userId') userId: string) {
     return this.prisma.$transaction(async (tx) => {
-      // creator 側：承認にする
+      const creator = await tx.creator.findUnique({
+        where: { userId },
+        select: { userId: true, approvalStatus: true },
+      });
+      if (!creator) throw new NotFoundException('クリエイターが見つかりません');
+
+      // ✅ creator 側：承認にする（User.role は触らない）
       await tx.creator.update({
         where: { userId },
         data: {
-          approvalStatus: 'approved' as any,
+          approvalStatus: 'approved',
           approvedAt: new Date(),
           rejectedAt: null,
           rejectReason: null,
@@ -117,12 +130,7 @@ export class AdminCreatorsController {
         },
       });
 
-      // user 側：role=creator にする
-      await tx.user.update({
-        where: { id: userId },
-        data: { role: Role.creator },
-      });
-
+      // ✅ 通知
       await tx.notification.create({
         data: {
           userId,
@@ -130,7 +138,7 @@ export class AdminCreatorsController {
           title: 'クリエイター申請が承認されました',
           body: 'クリエイター機能が利用可能になりました。プロフィール設定と本人確認（KYC）を進めてください。',
         },
-      });      
+      });
 
       return { ok: true };
     });
@@ -149,10 +157,17 @@ export class AdminCreatorsController {
     const reason = (body.reason ?? '').trim();
     if (!reason) throw new BadRequestException('reject reason is required');
 
+    // 存在チェック（分かりやすいエラーにする）
+    const creator = await this.prisma.creator.findUnique({
+      where: { userId },
+      select: { userId: true },
+    });
+    if (!creator) throw new NotFoundException('クリエイターが見つかりません');
+
     await this.prisma.creator.update({
       where: { userId },
       data: {
-        approvalStatus: 'rejected' as any,
+        approvalStatus: 'rejected',
         rejectedAt: new Date(),
         approvedAt: null,
         rejectReason: reason,
@@ -167,21 +182,21 @@ export class AdminCreatorsController {
         title: 'クリエイター申請が差し戻されました',
         body: `差し戻し理由：${reason}`,
       },
-    });    
+    });
 
-    // role は fan のまま（方針）
+    // ✅ User.role は運営専用なので触らない
     return { ok: true };
   }
 
   /**
    * クリエイター一覧（既存）
-   * GET /admin/creators?isListed=true&kycStatus=pending
+   * GET /admin/creators?isListed=true&kycStatus=pending&approvalStatus=approved
    */
   @Get()
   async listCreators(
     @Query('isListed') isListed?: string,
     @Query('kycStatus') kycStatus?: string,
-    @Query('approvalStatus') approvalStatus?: string, // ★任意追加：一覧のフィルタに使える
+    @Query('approvalStatus') approvalStatus?: string,
   ) {
     const where: any = {};
 
@@ -200,7 +215,7 @@ export class AdminCreatorsController {
           select: {
             id: true,
             email: true,
-            role: true,
+            role: true, // 運営判定用に残すのはOK（creator判定には使わない）
             isActive: true,
             createdAt: true,
           },
@@ -220,10 +235,10 @@ export class AdminCreatorsController {
       email: c.user?.email ?? '',
       publicName: c.publicName,
       isListed: c.isListed,
-      approvalStatus: (c as any).approvalStatus,
-      approvedAt: (c as any).approvedAt ?? null,
-      rejectedAt: (c as any).rejectedAt ?? null,
-      rejectReason: (c as any).rejectReason ?? null,
+      approvalStatus: c.approvalStatus,
+      approvedAt: c.approvedAt ?? null,
+      rejectedAt: c.rejectedAt ?? null,
+      rejectReason: c.rejectReason ?? null,
       stripeKycStatus: c.stripeKycStatus,
       stripeChargesEnabled: c.stripeChargesEnabled,
       stripePayoutsEnabled: c.stripePayoutsEnabled,
@@ -276,6 +291,7 @@ export class AdminCreatorsController {
     return { ok: true, userId: updated.userId, isListed: updated.isListed };
   }
 
+  // 申請履歴
   @Get('applications/:userId/history')
   async getApplicationHistory(@Param('userId') userId: string) {
     const rows = await this.prisma.creatorApplication.findMany({
@@ -292,5 +308,5 @@ export class AdminCreatorsController {
     });
 
     return { items: rows };
-  }  
+  }
 }

@@ -4,9 +4,10 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Role } from '@prisma/client';
+import { CreatorApprovalStatus } from '@prisma/client';
 import { RequestWithUser } from 'src/shared/types';
 
 @Injectable()
@@ -14,24 +15,27 @@ export class CreatorOnlyGuard implements CanActivate {
   constructor(private readonly prisma: PrismaService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // ★ getRequest<RequestWithUser>() にする
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const user = request.user;
 
-    if (!user) {
-      throw new ForbiddenException('ログインが必要です');
+    if (!user?.id) {
+      throw new UnauthorizedException('ログインが必要です');
     }
 
-    // DBからユーザーを取得してrole確認
-    const dbUser = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      select: { role: true },
+    const creator = await this.prisma.creator.findUnique({
+      where: { userId: user.id },
+      select: { approvalStatus: true },
     });
 
-    if (!dbUser || dbUser.role !== Role.creator) {
-      throw new ForbiddenException('クリエイターのみ利用可能です');
+    if (!creator) {
+      throw new ForbiddenException('クリエイター申請が必要です');
+    }
+
+    if (creator.approvalStatus !== CreatorApprovalStatus.approved) {
+      throw new ForbiddenException('承認済みクリエイターのみ利用可能です');
     }
 
     return true;
   }
 }
+

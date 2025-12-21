@@ -1,5 +1,17 @@
+// api/arc/apps/users/me/summary/users-me-summary.service.ts
+
 import { Injectable, InternalServerErrorException } from '@nestjs/common'
 import { PrismaService } from '../../../prisma/prisma.service'
+import type { Role } from '@prisma/client'
+
+type MeProfile = {
+  id: string
+  email: string | null
+  role: Role | null
+  displayName: string | null
+  avatarUrl: string | null
+  bio: string | null
+}
 
 @Injectable()
 export class UsersMeSummaryService {
@@ -18,17 +30,26 @@ export class UsersMeSummaryService {
         },
       })
 
-      // user が見つからない場合でも 200 で空を返す（ここで throw しない）
-      const profile = user
+      // ✅ user が見つからない場合でも 200 で空を返す（型を固定）
+      const emptyProfile: MeProfile = {
+        id: userId,
+        email: null,
+        role: null,
+        displayName: null,
+        avatarUrl: null,
+        bio: null,
+      }
+
+      const profile: MeProfile = user
         ? {
             id: user.id,
             email: user.email,
-            role: user.role,
+            role: user.role ?? null,
             displayName: user.profile?.displayName ?? null,
             avatarUrl: user.profile?.avatarUrl ?? null,
             bio: user.profile?.bio ?? null,
           }
-        : { id: userId, email: null, role: null, displayName: null, avatarUrl: null, bio: null }
+        : emptyProfile
 
       // 2) 購読（Subscription → Plan → Creator）
       const subs = await this.prisma.subscription.findMany({
@@ -78,7 +99,6 @@ export class UsersMeSummaryService {
 
       return { profile, subscriptions, payments }
     } catch (e: any) {
-      // ここで詳細ログを出しておくと原因特定が早い
       console.error('[users/me/summary] failed:', e?.message, e?.stack)
       throw new InternalServerErrorException('summary_build_failed')
     }

@@ -4,12 +4,9 @@
 // 権限・審査
 // ==============================
 enum Role {
-  fan
-  creator
-  admin
+  user
   sub_admin
-  shop_admin
-  shop_staff  
+  admin
 }
 
 enum ShopMemberRole {

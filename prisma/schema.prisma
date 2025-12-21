@@ -20,12 +20,9 @@ datasource db {
 // 権限・審査
 // ==============================
 enum Role {
-  fan
-  creator
-  admin
+  user
   sub_admin
-  shop_admin
-  shop_staff  
+  admin
 }
 
 enum ShopMemberRole {
@@ -136,7 +133,7 @@ model User {
   id              String    @id @default(uuid())
   email           String    @unique
   passwordHash    String
-  role            Role      @default(fan)
+  role            Role?     
   isActive        Boolean   @default(true)
   emailVerifiedAt DateTime?
   stripeCustomerId String?

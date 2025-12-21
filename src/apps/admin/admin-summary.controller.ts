@@ -4,9 +4,6 @@ import { Controller, Get, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminOnlyGuard } from '../access-control/admin-only.guard';
-import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
-import { Role } from '@prisma/client';
 
 @UseGuards(JwtAuthGuard, AdminOnlyGuard)
 @Controller('admin/summary')
@@ -19,7 +16,6 @@ export class AdminSummaryController {
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
-
 
     const payments = await this.prisma.payment.aggregate({
       where: {

@@ -234,6 +234,12 @@ export class ShopSelfController {
     };
   }
 
+  @Get("shop/me")
+  async me(@Req() req: Request) {
+    const me = await this.shopAuth.getMyShopMemberOrThrow(req);
+    return { shopId: me.shopId, role: me.role }; // role: owner|admin|staff
+  }
+
   // =========================================================
   // ✅ 互換ルート（旧 /shops/:shopId/... を残す）
   // =========================================================

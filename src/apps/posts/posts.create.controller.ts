@@ -11,7 +11,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
-import { PublishedStatus, Role, Visibility } from '@prisma/client';
+import { PublishedStatus, Role, Visibility, CreatorApprovalStatus } from '@prisma/client';
 import { UserJwt } from 'src/shared/types';
 import { CreatorHelper } from '../helpers/creator.helper';
 
@@ -22,54 +22,43 @@ export class PostsCreateController {
     private readonly creatorHelper: CreatorHelper,
   ) {}
 
-  /**
-   * エイリアス①: POST /posts
-   *  - createPostSmart() の候補パスその1
-   */
   @UseGuards(JwtAuthGuard)
   @Post('posts')
   async createAtPosts(@Body() dto: CreatePostDto, @Req() req: any) {
     return this.createImpl(dto, req);
   }
 
-  /**
-   * エイリアス②: POST /creators/me/posts
-   *  - createPostSmart() の候補パスその2
-   */
   @UseGuards(JwtAuthGuard)
   @Post('creators/me/posts')
   async createAtCreatorsMe(@Body() dto: CreatePostDto, @Req() req: any) {
     return this.createImpl(dto, req);
   }
 
-  /**
-   * 共通実装
-   */
   private async createImpl(dto: CreatePostDto, req: any) {
     const user = req.user as UserJwt | undefined;
-    if (!user?.id) {
-      throw new UnauthorizedException('ログインが必要です');
+    if (!user?.id) throw new UnauthorizedException('ログインが必要です');
+
+    // ✅ 運営判定（User.role は運営専用）
+    const isAdmin = user.role === Role.admin || user.role === Role.sub_admin;
+
+    // ✅ クリエイター判定（roleは見ない：Creator approved を見る）
+    const creator = await this.prisma.creator.findUnique({
+      where: { userId: user.id }, // userId が unique / id 想定
+      select: { userId: true, approvalStatus: true },
+    });
+
+    const isApprovedCreator =
+      !!creator && creator.approvalStatus === CreatorApprovalStatus.approved;
+
+    if (!isAdmin && !isApprovedCreator) {
+      throw new ForbiddenException('承認済みクリエイターのみ投稿できます');
     }
 
-    // 権限チェック
-    if (user.role !== Role.creator && user.role !== Role.admin) {
-      throw new ForbiddenException('投稿権限がありません');
-    }
+    // ✅ creatorId（運営投稿は null、クリエイター投稿は紐付け）
+    const creatorId: string | null = isAdmin ? null : creator!.userId;
 
-    // ★ admin かどうか
-    const isAdmin = user.role === Role.admin;
-
-    // ★ creator の場合だけ Creator を紐付け
-    let creatorId: string | null = null;
-    if (user.role === Role.creator) {
-      creatorId = await this.creatorHelper.getMyCreatorId(user.id);
-    }
-
-    // ---------------------------------------------
-    // 🔥 admin のときは「無料投稿」へ強制
-    // ---------------------------------------------
-    const visibility: Visibility =
-      isAdmin ? Visibility.free : dto.visibility;
+    // 🔥 運営投稿は無料固定
+    const visibility: Visibility = isAdmin ? Visibility.free : dto.visibility;
 
     const planId: string | null =
       isAdmin
@@ -85,7 +74,6 @@ export class PostsCreateController {
         ? dto.priceJpy ?? null
         : null;
 
-    // 公開ステータス（draft / published）
     const toPublishedStatus = (v: unknown): PublishedStatus => {
       if (typeof v === 'boolean') {
         return v ? PublishedStatus.published : PublishedStatus.draft;
@@ -114,14 +102,11 @@ export class PostsCreateController {
         planId,
         priceJpy,
 
-        // Creator
         creatorId,
 
-        // 公開状態
         publishedStatus: pub,
         publishedAt: pubAt,
 
-        // ★ ここ！ admin の投稿は isOfficial=true
         isOfficial: isAdmin,
       },
       select: {
@@ -139,5 +124,4 @@ export class PostsCreateController {
 
     return { ok: true, post };
   }
-
 }

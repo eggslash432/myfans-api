@@ -10,6 +10,11 @@ import { PostsFetchController } from './posts.fetch.controller';
 import { PostsReportController } from './posts.report.controller';
 import { PostDeleteService } from './post-delete.service';
 import { StorageModule } from '../storage/storage.module';
+import { PostsCreatorService } from './posts.creator.service';
+import { PostsEditService } from './posts.edit.service';
+import { PostsPublicService } from './posts.public.service';
+import { PostsAdminService } from './posts.admin.service';
+import { PostsMyService } from './posts.my.service';
 
 @Module({
   imports: [
@@ -24,6 +29,11 @@ import { StorageModule } from '../storage/storage.module';
     PostsService, 
     PrismaService, 
     PostDeleteService,
+    PostsCreatorService,
+    PostsEditService,
+    PostsPublicService,
+    PostsAdminService,
+    PostsMyService,    
   ],
   controllers: [
     PostsController,

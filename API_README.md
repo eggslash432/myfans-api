@@ -38,9 +38,15 @@ npx prisma migrate deploy
 
 「分割したPrismaの統合、マイグレーション」
 
+# schema.prisma 変更
 npm run prisma:build
 npm run prisma:generate
-npm run prisma:migrate:dev
+
+# DB反映（resetなし）
+npx prisma migrate deploy
 
 「データベース管理」
 npm run prisma:studio
+
+「スキーマのenumsをfrontにprisma-enums.tsとして出力」
+npx ts-node scripts/export-enums.ts

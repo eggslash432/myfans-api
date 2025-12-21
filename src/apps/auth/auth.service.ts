@@ -1,4 +1,12 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+// api/src/apps/auth/auth.service.ts
+
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { SignupDto } from './dto/signup.dto';
@@ -6,58 +14,46 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
 import { ChangePasswordDto } from './dto/change-password.dto';
 
+type JwtPayload = {
+  sub: string;
+  role?: Role | null;
+  email?: string;
+};
+
 @Injectable()
 export class AuthService {
   constructor(
     private readonly jwt: JwtService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
   ) {}
 
-  private normalizeRole(input?: 'fan'|'creator'): Role {
-    return input === 'creator' ? Role.creator : Role.fan; // fan を既定に
-  }
-
-  /** サインアップ実装 */
+  /** サインアップ（User.role は運営のみ。一般ユーザーは role=null） */
   async signup(dto: SignupDto) {
     const email = dto.email.toLowerCase().trim();
     const exists = await this.prisma.user.findUnique({ where: { email } });
     if (exists) throw new BadRequestException('このメールアドレスは既に登録されています');
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const role = this.normalizeRole(dto.role);
 
-    // ユーザー作成
     const user = await this.prisma.user.create({
       data: {
         email,
-        passwordHash,     // ← Prismaのカラム名に合わせて。もし `password` なら変更してください
-        role,             // スキーマに role が無い場合は削ってOK（/auth/me で推定でも可）
+        passwordHash,
+        role: null, //一般ユーザーは role=null（運営のみ role を持つ）
       },
       select: { id: true, email: true, role: true },
     });
 
-    // クリエイター希望なら Creator 行も同時に用意（userId が 1:1 Unique）
-    if (role === 'creator') {
-      await this.prisma.creator.create({
-        data: {
-          userId: user.id,
-          publicName: email.split('@')[0], // 初期値。プロフィール編集で上書き想定
-        },
-      });
-    }
-
-    const access_token = await this.signAccessToken(user.id, user.role as Role, user.email);
-    const refresh_token = await this.signRefreshToken(user.id, user.role as Role, user.email);
+    const access_token = await this.signAccessToken(user.id, user.role, user.email);
+    const refresh_token = await this.signRefreshToken(user.id, user.role, user.email);
 
     return {
       access_token,
       refresh_token,
-      user: { id: user.id, email: user.email, role: user.role ?? (role as Role) },
+      user,
     };
-  }  
+  }
 
-    /** ←← ここを全面差し替え */
-  /** ←← ここを全面差し替え */
   async login(dto: { email: string; password: string }) {
     const email = dto.email.toLowerCase().trim();
 
@@ -69,62 +65,61 @@ export class AuthService {
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Invalid credentials');
     }
+
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!ok) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
+    if (!ok) throw new UnauthorizedException('Invalid credentials');
 
-    // ★ ここで最新の role を DB から再取得！
-    const freshUser = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      select: { id: true, email: true, role: true },
-    });
+    const access_token = await this.signAccessToken(user.id, user.role, user.email);
+    const refresh_token = await this.signRefreshToken(user.id, user.role, user.email);
 
-    // ★ TypeScript エラー対策：null チェック
-    if (!freshUser) {
-      throw new UnauthorizedException('User not found'); 
-    }    
-
-    const access_token  = await this.signAccessToken(freshUser.id, freshUser.role, freshUser.email);
-    const refresh_token = await this.signRefreshToken(freshUser.id, freshUser.role, freshUser.email);
-
-    return { 
-      access_token, 
-      refresh_token, 
-      user: { id: freshUser.id, email: freshUser.email, role: freshUser.role } 
+    return {
+      access_token,
+      refresh_token,
+      user: { id: user.id, email: user.email, role: user.role },
     };
   }
 
   async rotateAccessToken(refresh_token: string) {
     try {
-      const payload = await this.jwt.verifyAsync(refresh_token, {
+      const payload = (await this.jwt.verifyAsync(refresh_token, {
         secret: process.env.JWT_REFRESH_SECRET!,
-      });
-      return this.signAccessToken(payload.sub, payload.role);
+      })) as JwtPayload;
+
+      // role は無くてもOK（一般ユーザーは null）
+      return this.signAccessToken(payload.sub, payload.role ?? null, payload.email);
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
   }
 
-  private async signAccessToken(userId: number | string, role?: string, email?: string) {
-    const payload: { sub: string; role?: string; email?: string} = {
-      sub: String(userId),   // ← ここが重要
-      role,
+  private async signAccessToken(
+    userId: number | string,
+    role?: Role | null,
+    email?: string,
+  ) {
+    const payload: JwtPayload = {
+      sub: String(userId),
+      role: role ?? null,
       email,
     };
+
     return this.jwt.signAsync(payload, {
-      // ↓② と合わせて読んでください
       secret: process.env.JWT_SECRET as string,
       expiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
-    } as any); // ← secret を options に入れる場合は any で逃がすのが一番早い
+    } as any);
   }
 
-  private async signRefreshToken(userId: number | string, role?: Role, email?: string) {
-    const payload: { sub: string; role?: Role; email?: string } = {
-       sub: String(userId) ,
-       role,
-       email,
+  private async signRefreshToken(
+    userId: number | string,
+    role?: Role | null,
+    email?: string,
+  ) {
+    const payload: JwtPayload = {
+      sub: String(userId),
+      role: role ?? null,
+      email,
     };
+
     return this.jwt.signAsync(payload, {
       secret: process.env.JWT_REFRESH_SECRET as string,
       expiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
@@ -132,17 +127,12 @@ export class AuthService {
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
-
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    // 現在のパスワードチェック
     const ok = await bcrypt.compare(dto.oldPassword, user.passwordHash);
     if (!ok) throw new ForbiddenException('現在のパスワードが違います');
 
-    // ハッシュして保存
     const hashed = await bcrypt.hash(dto.newPassword, 10);
 
     await this.prisma.user.update({
