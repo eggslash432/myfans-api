@@ -3,6 +3,7 @@
 import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PublishedStatus } from '@prisma/client';
+import { ParseUserIdPipe } from '../../../shared/pipes/parse-user-id.pipe';
 
 @Controller('creators')
 export class CreatorsPublicController {
@@ -38,8 +39,9 @@ export class CreatorsPublicController {
     };
   }
 
+  // ✅ ID形式チェックは Pipe に完全委譲
   @Get(':id/posts')
-  async posts(@Param('id') id: string) {
+  async posts(@Param('id', ParseUserIdPipe) id: string) {
     const creator = await this.prisma.creator.findUnique({
       where: { userId: id },
       select: {
@@ -69,8 +71,9 @@ export class CreatorsPublicController {
     return { items: posts };
   }
 
+  // ✅ ここも同じ
   @Get(':id')
-  async detail(@Param('id') id: string) {
+  async detail(@Param('id', ParseUserIdPipe) id: string) {
     const c = await this.prisma.creator.findUnique({
       where: { userId: id },
       include: {
@@ -78,8 +81,8 @@ export class CreatorsPublicController {
         plans: { where: { isActive: true } },
       },
     });
-    if (!c) throw new NotFoundException('クリエイターが見つかりません');
 
+    if (!c) throw new NotFoundException('クリエイターが見つかりません');
     if (!c.user.isActive || c.approvalStatus !== 'approved' || !c.isListed) {
       throw new NotFoundException('クリエイターが見つかりません');
     }

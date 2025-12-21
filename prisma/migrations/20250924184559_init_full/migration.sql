@@ -1,5 +1,5 @@
 -- CreateEnum
-CREATE TYPE "public"."Role" AS ENUM ('fan', 'creator', 'admin');
+CREATE TYPE "Role" AS ENUM ('user', 'sub_admin', 'admin');
 
 -- CreateEnum
 CREATE TYPE "public"."KycStatus" AS ENUM ('pending', 'approved', 'rejected');

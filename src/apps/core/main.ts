@@ -34,7 +34,11 @@ async function bootstrap() {
 
   // バリデーション
   app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    new ValidationPipe({ 
+      whitelist: true, 
+      forbidNonWhitelisted: true, 
+      transform: true,
+    }),
   );
 
   // CORS（必要に応じてステージングのフロントURLを追加）

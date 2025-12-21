@@ -142,7 +142,7 @@ model User {
   id              String    @id @default(uuid())
   email           String    @unique
   passwordHash    String
-  role            Role?     
+  role            Role      @default(user)   
   isActive        Boolean   @default(true)
   emailVerifiedAt DateTime?
   stripeCustomerId String?

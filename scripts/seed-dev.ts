@@ -5,43 +5,67 @@ import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
-async function upsertUser(email: string, role: Role, passwordPlain = 'password') {
+async function upsertUser(
+  email: string,
+  role: Role,
+  passwordPlain = 'password'
+) {
   const passwordHash = await bcrypt.hash(passwordPlain, 10);
-  // emailユニーク前提で upsert（idはDB側で採番/uuid）
-  const user = await prisma.user.upsert({
+
+  return prisma.user.upsert({
     where: { email },
-    update: {                     // ← ここを空にしない！
+    update: {
       role,
-      passwordHash,              // 既存ユーザーでもパスワードを更新
+      passwordHash,
       isActive: true,
     },
-    create: { email, role, passwordHash },
+    create: {
+      email,
+      role,
+      passwordHash,
+    },
     select: { id: true, email: true, role: true },
   });
-  return user;
 }
 
 async function upsertCreatorForUser(userId: string, publicName: string) {
-  // userIdがstringの想定（schemaに合わせて）
   return prisma.creator.upsert({
-    where: { userId },       // @unique
+    where: { userId },
     update: { publicName, isListed: true },
-    create: { userId, publicName, isListed: true },
+    create: {
+      userId,
+      publicName,
+      isListed: true,
+      approvalStatus: 'approved',
+    },
     select: { userId: true, publicName: true },
   });
 }
 
 async function main() {
-  // 1) ユーザー（ファン/クリエイター）を用意
-  const fan = await upsertUser('user1@example.com', 'fan', 'userpass');            // ログイン用
-  const creatorUser = await upsertUser('user2@example.com', 'creator', 'creatorpass');
+  // 1) 一般ユーザー
+  const fan = await upsertUser(
+    'user1@example.com',
+    Role.user,
+    'userpass'
+  );
 
-  // 2) クリエイター行（1:1）
-  const creator = await upsertCreatorForUser(creatorUser.id, 'demo-creator');
+  // 2) クリエイター用ユーザー（role は user のまま）
+  const creatorUser = await upsertUser(
+    'user2@example.com',
+    Role.user,
+    'creatorpass'
+  );
 
-  // 3) プラン（任意：存在チェックして1件用意）
+  // 3) Creator レコードを作る（ここが分岐点）
+  const creator = await upsertCreatorForUser(
+    creatorUser.id,
+    'demo-creator'
+  );
+
+  // 4) プラン
   const basicPlan = await prisma.plan.upsert({
-    where: { id: 'basic-plan-1' }, // 文字ID運用の例。数値なら別ロジックでOK
+    where: { id: 'basic-plan-1' },
     update: { isActive: true },
     create: {
       id: 'basic-plan-1',
@@ -50,41 +74,32 @@ async function main() {
       priceJpy: 980,
       isActive: true,
     },
-    select: { id: true, name: true, priceJpy: true, isActive: true },
   });
 
-  // 4) 投稿（無料1件 + 公開済み）
+  // 5) 無料投稿
   await prisma.post.create({
     data: {
       creatorId: creator.userId,
       title: 'ようこそ MyFans Clone へ',
       body: 'これはシードデータの最初の投稿です。',
-      visibility: 'free',                         // schemaがenumなら対応enumに変更
-      priceJpy: null,
-      publishedStatus: PublishedStatus.published, // ← enum を使う
+      visibility: 'free',
+      publishedStatus: PublishedStatus.published,
       publishedAt: new Date(),
     },
   });
 
-  // 5) 有料投稿（任意）
+  // 6) 下書き投稿
   await prisma.post.create({
     data: {
       creatorId: creator.userId,
       title: '有料投稿（プラン向け）',
       body: 'プラン加入者のみ閲覧できます。',
-      visibility: 'plan',                         // schemaに合わせて 'plan' / 'paid_single'
-      priceJpy:  null,
-      publishedStatus: PublishedStatus.draft,     // 下書き
-      publishedAt: null,
+      visibility: 'plan',
+      publishedStatus: PublishedStatus.draft,
     },
   });
 
-  console.log('✅ Seed completed:', {
-    fan,
-    creatorUser,
-    creator,
-    basicPlan,
-  });
+  console.log('✅ Seed completed');
 }
 
 main()

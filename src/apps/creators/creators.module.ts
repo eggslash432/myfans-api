@@ -34,8 +34,8 @@ import { CreatorsControllerHelpers } from './controllers/creators.controller-hel
     CreatorApplicationsController,
     CreatorsAnalyticsController,
     CreatorsApplyController,
-    CreatorsPublicController,
     CreatorsMeController,
+    CreatorsPublicController,
     CreatorsCheckoutController,
   ],
   providers: [
