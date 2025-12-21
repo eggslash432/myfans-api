@@ -4,7 +4,6 @@ import { Module } from '@nestjs/common';
 
 // 共通サービス
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from '../notifications/notifications.service';
 
 import { ShopSelfController } from './shop-self.controller';
 import { ShopInvitesController } from './shop-invites.controller';
@@ -19,7 +18,6 @@ import { ShopAuthService } from './shop-auth.service';
   ],
   providers: [
     PrismaService,
-    NotificationsService,
     ShopAuthService,
   ],
   exports: [

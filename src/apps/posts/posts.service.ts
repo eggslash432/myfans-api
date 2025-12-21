@@ -47,12 +47,6 @@ export class PostsService {
     return this.publicSvc.getPublicFeed();
   }
 
-  reportPost(userId: string, postId: string, reason: string) {
-    // 元のままでもいいけど publicSvc に寄せるなら移してOK
-    // ここは一旦省略したければ publicSvc に移動してもOK
-    throw new Error('move reportPost here or keep in a separate service');
-  }
-
   getAdminPosts(limit = 5) {
     return this.adminSvc.getAdminPosts(limit);
   }

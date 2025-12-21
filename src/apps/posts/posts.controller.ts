@@ -109,23 +109,6 @@ export class PostsController {
     return detail;
   }
 
-  // ==============================
-  // Report
-  // POST /posts/:id/report
-  // ==============================
-  @UseGuards(JwtAuthGuard)
-  @PostMethod(':id/report')
-  async reportPost(
-    @Param('id') id: string,
-    @Body() body: { reason?: string },
-    @Req() req: any,
-  ) {
-    const user = req.user as UserJwt | undefined;
-    if (!user?.id) throw new ForbiddenException('ログインが必要です');
-
-    const reason = body.reason ?? '';
-    return this.postsService.reportPost(user.id, id, reason);
-  }
 
   // ==============================
   // Upload media

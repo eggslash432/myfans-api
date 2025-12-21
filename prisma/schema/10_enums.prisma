@@ -103,6 +103,15 @@ enum PayoutStatus {
 }
 
 // ==============================
+// 通報・モデレーション
+// ==============================
+enum ReportStatus {
+  pending
+  reviewed
+  dismissed
+}
+
+// ==============================
 // UI（フロント都合の enum）
 // ==============================
 enum PlanModalMode {
