@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { CreatorsController } from './creators.controller';
 import { CreatorsService } from './creators.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatorPayoutsController } from './creator-payouts.controller';
@@ -9,6 +8,18 @@ import { CreatorKycController } from './creator-kyc.controller';
 import { CreatorApplicationsController } from './creator-applications.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { StorageModule } from '../storage/storage.module';
+import { CreatorApplyService } from './apply/creator-apply.service';
+import { CreatorPublicService } from './public/creator-public.service';
+import { CreatorStripeService } from './stripe/creator-stripe.service';
+import { CreatorAnalyticsService } from './analytics/creator-analytics.service';
+import { CreatorProfileService } from './profile/creator-profile.service';
+import { StripeClientProvider } from './stripe/stripe-client.provider';
+import { CreatorsAnalyticsController } from './controllers/creators-analytics.controller';
+import { CreatorsApplyController } from './controllers/creators-apply.controller';
+import { CreatorsPublicController } from './controllers/creators-public.controller';
+import { CreatorsMeController } from './controllers/creators-me.controller';
+import { CreatorsCheckoutController } from './controllers/creators-checkout.controller';
+import { CreatorsControllerHelpers } from './controllers/creators.controller-helpers';
 
 @Module({
   imports: [
@@ -18,14 +29,29 @@ import { StorageModule } from '../storage/storage.module';
     StorageModule,
   ],
   controllers: [
-    CreatorsController, 
     CreatorPayoutsController, 
     CreatorKycController,
     CreatorApplicationsController,
+    CreatorsAnalyticsController,
+    CreatorsApplyController,
+    CreatorsPublicController,
+    CreatorsMeController,
+    CreatorsCheckoutController,
   ],
   providers: [
     CreatorsService, 
-    PrismaService
+    PrismaService,
+    // split services
+    CreatorApplyService,
+    CreatorPublicService,
+    CreatorStripeService,
+    CreatorAnalyticsService,
+    CreatorProfileService,
+
+    // stripe client
+    StripeClientProvider,
+
+    CreatorsControllerHelpers,
   ],
 })
 export class CreatorsModule {}
