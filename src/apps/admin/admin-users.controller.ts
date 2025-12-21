@@ -8,6 +8,7 @@ import {
   NotFoundException,
   Param,
   Patch,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -21,6 +22,13 @@ type UpdateAdminUserDto = {
   role?: Role;
   isGeneralAdmin?: boolean;
 };
+
+// 追加: ページングユーティリティ（controller内でもOK）
+function clampTake(raw: any, def = 20, min = 1, max = 50) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return def;
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
 
 @UseGuards(JwtAuthGuard, AdminOnlyGuard)
 @Controller('admin/users')
@@ -128,5 +136,64 @@ export class AdminUsersController {
     });
 
     return { ok: true, user: updated };
-  }
+  }  
+
+  /**
+   * ✅ ③用：任意ユーザー検索
+   * GET /admin/users/search?q=xxx&take=20&cursor=user_...
+   */
+  @Get('search')
+  async searchUsers(
+    @Query('q') q?: string,
+    @Query('take') takeRaw?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    const take = clampTake(takeRaw, 20, 1, 50);
+    const keyword = (q ?? '').trim();
+    const cur = (cursor ?? '').trim();
+
+    const where: any = {};
+    if (keyword) {
+      where.OR = [
+        { email: { contains: keyword, mode: 'insensitive' } },
+        // profile が無い/弱いならここ消してOK
+        { profile: { is: { displayName: { contains: keyword, mode: 'insensitive' } } } },
+      ];
+    } else {
+      // キーワード無しで全件は重いので、空なら空返しでもいい
+      // ここは好み：空なら最新50件返すでもOK
+    }
+
+    const rows = await this.prisma.user.findMany({
+      where,
+      take: take + 1,
+      ...(cur ? { skip: 1, cursor: { id: cur } } : {}),
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        profile: { select: { displayName: true } },
+      },
+    });
+
+    const hasNext = rows.length > take;
+    const slice = hasNext ? rows.slice(0, take) : rows;
+
+    const items = slice.map((u) => ({
+      id: u.id,
+      email: u.email,
+      displayName: u.profile?.displayName ?? null,
+      role: u.role,
+      isActive: u.isActive,
+      createdAt: u.createdAt,
+    }));
+
+    return {
+      items,
+      nextCursor: hasNext ? items[items.length - 1]?.id ?? null : null,
+    };
+  }  
 }

@@ -185,11 +185,12 @@ model ShopMember {
   userId    String
   role      ShopMemberRole @default(staff)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([shopId, userId])
+  @@unique([shopId, userId], name: "shopId_userId")
   @@index([userId])
   @@index([shopId, role])
 }

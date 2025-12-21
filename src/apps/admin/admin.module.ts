@@ -1,7 +1,6 @@
 // api/src/apps/admin/admin.module.ts
 
 import { Module } from '@nestjs/common';
-import { AdminCreatorsController } from './admin-creators.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminPostsController } from './admin.posts.controller';
 import { AdminReportsController } from './admin-reports.controller';
@@ -12,6 +11,10 @@ import { AdminUsersController } from './admin-users.controller';
 import { S3Service } from '../storage/s3.service';
 import { PostDeleteService } from '../posts/post-delete.service';
 import { StorageModule } from '../storage/storage.module';
+import { AdminShopsController } from './admin-shops.controller';
+import { AdminCreatorsController } from './creators/admin-creators.controller';
+import { AdminCreatorsService } from './creators/admin-creators.service';
+import { AdminShopsService } from './admin-shops.service';
 
 @Module({
   imports: [
@@ -24,10 +27,13 @@ import { StorageModule } from '../storage/storage.module';
     AdminSummaryController,
     AdminSettingsController,
     AdminUsersController,
+    AdminShopsController,
   ],
   providers: [
     PrismaService,
     AdminService,
+    AdminCreatorsService,
+    AdminShopsService,
     S3Service,
     PostDeleteService,
   ],

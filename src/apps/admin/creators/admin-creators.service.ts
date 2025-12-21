@@ -1,48 +1,16 @@
-// api/src/apps/admin/admin-creators.controller.ts
+// api/src/apps/admin/creators/admin-creators.service.ts
 
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Patch,
-  Query,
-  UseGuards,
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { AdminOnlyGuard } from '../access-control/admin-only.guard';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreatorApprovalStatus } from '@prisma/client';
 
-class UpdateListingBody {
-  @IsBoolean()
-  isListed!: boolean;
-}
-
-class RejectApplicationBody {
-  @IsString()
-  reason!: string;
-}
-
-@UseGuards(JwtAuthGuard, AdminOnlyGuard)
-@Controller('admin/creators')
-export class AdminCreatorsController {
+export class AdminCreatorsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ============================
-  // クリエイター申請一覧（審査待ち/承認済み/却下など）
-  // GET /admin/creators/applications?status=pending&q=xxx
-  // ============================
-  @Get('applications')
-  async listApplications(
-    @Query('status') status?: CreatorApprovalStatus,
-    @Query('q') q?: string,
-  ) {
-    const where: any = {};
+  async listApplications(params: { status?: CreatorApprovalStatus; q?: string }) {
+    const { status, q } = params;
 
+    const where: any = {};
     if (status) where.approvalStatus = status;
 
     if (q?.trim()) {
@@ -52,7 +20,9 @@ export class AdminCreatorsController {
         { user: { email: { contains: keyword, mode: 'insensitive' } } },
         {
           user: {
-            profile: { is: { displayName: { contains: keyword, mode: 'insensitive' } } },
+            profile: {
+              is: { displayName: { contains: keyword, mode: 'insensitive' } },
+            },
           },
         },
       ];
@@ -105,12 +75,7 @@ export class AdminCreatorsController {
     };
   }
 
-  // ============================
-  // 承認
-  // PATCH /admin/creators/applications/:userId/approve
-  // ============================
-  @Patch('applications/:userId/approve')
-  async approve(@Param('userId') userId: string) {
+  async approve(userId: string) {
     return this.prisma.$transaction(async (tx) => {
       const creator = await tx.creator.findUnique({
         where: { userId },
@@ -118,7 +83,6 @@ export class AdminCreatorsController {
       });
       if (!creator) throw new NotFoundException('クリエイターが見つかりません');
 
-      // ✅ creator 側：承認にする（User.role は触らない）
       await tx.creator.update({
         where: { userId },
         data: {
@@ -130,7 +94,6 @@ export class AdminCreatorsController {
         },
       });
 
-      // ✅ 通知
       await tx.notification.create({
         data: {
           userId,
@@ -144,20 +107,10 @@ export class AdminCreatorsController {
     });
   }
 
-  // ============================
-  // 却下
-  // PATCH /admin/creators/applications/:userId/reject
-  // body: { reason: string }
-  // ============================
-  @Patch('applications/:userId/reject')
-  async reject(
-    @Param('userId') userId: string,
-    @Body() body: RejectApplicationBody,
-  ) {
-    const reason = (body.reason ?? '').trim();
+  async reject(userId: string, reasonRaw: string) {
+    const reason = (reasonRaw ?? '').trim();
     if (!reason) throw new BadRequestException('reject reason is required');
 
-    // 存在チェック（分かりやすいエラーにする）
     const creator = await this.prisma.creator.findUnique({
       where: { userId },
       select: { userId: true },
@@ -184,22 +137,17 @@ export class AdminCreatorsController {
       },
     });
 
-    // ✅ User.role は運営専用なので触らない
     return { ok: true };
   }
 
-  /**
-   * クリエイター一覧（既存）
-   * GET /admin/creators?isListed=true&kycStatus=pending&approvalStatus=approved
-   */
-  @Get()
-  async listCreators(
-    @Query('isListed') isListed?: string,
-    @Query('kycStatus') kycStatus?: string,
-    @Query('approvalStatus') approvalStatus?: string,
-  ) {
-    const where: any = {};
+  async listCreators(params: {
+    isListed?: string;
+    kycStatus?: string;
+    approvalStatus?: string;
+  }) {
+    const { isListed, kycStatus, approvalStatus } = params;
 
+    const where: any = {};
     if (typeof isListed === 'string') {
       if (isListed === 'true') where.isListed = true;
       if (isListed === 'false') where.isListed = false;
@@ -215,7 +163,7 @@ export class AdminCreatorsController {
           select: {
             id: true,
             email: true,
-            role: true, // 運営判定用に残すのはOK（creator判定には使わない）
+            role: true,
             isActive: true,
             createdAt: true,
           },
@@ -250,9 +198,7 @@ export class AdminCreatorsController {
     }));
   }
 
-  /** クリエイター詳細 */
-  @Get(':userId')
-  async getCreator(@Param('userId') userId: string) {
+  async getCreator(userId: string) {
     const creator = await this.prisma.creator.findUnique({
       where: { userId },
       include: {
@@ -273,27 +219,20 @@ export class AdminCreatorsController {
     return creator;
   }
 
-  /** 掲載 ON/OFF */
-  @Patch(':userId/listing')
-  async updateListing(
-    @Param('userId') userId: string,
-    @Body() body: UpdateListingBody,
-  ) {
-    if (typeof body.isListed !== 'boolean') {
+  async updateListing(userId: string, isListed: boolean) {
+    if (typeof isListed !== 'boolean') {
       throw new BadRequestException('isListed は boolean で指定してください');
     }
 
     const updated = await this.prisma.creator.update({
       where: { userId },
-      data: { isListed: body.isListed },
+      data: { isListed },
     });
 
     return { ok: true, userId: updated.userId, isListed: updated.isListed };
   }
 
-  // 申請履歴
-  @Get('applications/:userId/history')
-  async getApplicationHistory(@Param('userId') userId: string) {
+  async getApplicationHistory(userId: string) {
     const rows = await this.prisma.creatorApplication.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
