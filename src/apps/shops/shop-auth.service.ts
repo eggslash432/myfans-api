@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
-import { ShopMemberRole } from '@prisma/client';
+import { ShopMemberRole, Role } from '@prisma/client';
 
 @Injectable()
 export class ShopAuthService {
@@ -16,6 +16,29 @@ export class ShopAuthService {
     const userId = String((req as any).user?.id ?? '');
     if (!userId) throw new UnauthorizedException('ログイン情報が取得できません');
     return userId;
+  }
+
+  /**
+   * ✅ 運営管理者（platform admin）かどうか
+   * - JWT に role が入ってるならそれを優先
+   * - 無ければ DB の user.role を見に行く
+   */
+  async assertPlatformAdminOrThrow(req: Request): Promise<{ userId: string }> {
+    const userId = this.requireUserId(req);
+
+    const jwtRole = (req as any).user?.role as Role | string | undefined;
+    if (jwtRole === 'admin') return { userId };
+
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+
+    if (u?.role !== Role.admin) {
+      throw new ForbiddenException('運営管理者のみ実行できます');
+    }
+
+    return { userId };
   }
 
   /**
@@ -43,8 +66,6 @@ export class ShopAuthService {
 
   /**
    * ✅ 互換URL用（/shops/:shopId/...）の安全弁
-   * - 自分の所属shopと一致してるか強制
-   * - roles 指定があれば role もチェック
    */
   async assertMyShopIdMatchesOrThrow(
     req: Request,

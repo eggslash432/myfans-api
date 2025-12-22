@@ -8,6 +8,7 @@ model Creator {
   shop   Shop?  @relation(fields: [shopId], references: [id])
 
   publicName String
+  role CreatorRole @default(normal)
 
   approvalStatus CreatorApprovalStatus @default(pending)
   approvedAt     DateTime?

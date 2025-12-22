@@ -16,7 +16,7 @@ import { ShopAuthService } from './shop-auth.service';
 import { ShopMemberRole } from '@prisma/client';
 
 @UseGuards(JwtAuthGuard)
-@Controller('shop')
+@Controller('shops')
 export class ShopInvitesController {
   constructor(
     private readonly prisma: PrismaService,

@@ -49,12 +49,10 @@ psql \
 
 「分割したPrismaの統合、マイグレーション」
 
-# schema.prisma 変更
-npm run prisma:build
-npm run prisma:generate
+npm run prisma:build      # ← 必須（統合 schema を作る）
+npx prisma migrate dev    # ← migration 作成 + DB 反映
+npm run prisma:generate   # ← Prisma Client 再生成
 
-# DB反映（resetなし）
-npx prisma migrate deploy
 
 「データベース管理」
 npm run prisma:studio
