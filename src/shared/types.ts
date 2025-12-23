@@ -34,3 +34,11 @@ export type CreatePaymentWithShareArgs = {
 };
 
 export type ResolveAction = 'reviewed' | 'dismissed';
+
+export type SalesSummaryRes = {
+  range: 'today' | 'month' | 'all';
+  gross: number;         // 店舗取り分合計（Transfer.kind=shop）
+  platformFee: number;   // プラットフォーム取り分合計（同じ paymentId 群の Transfer.kind=platform）
+  net: number;           // 入金対象（=gross）
+  transactions: number;  // 取引数（Transfer.kind=shop の件数）
+};

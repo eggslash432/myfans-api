@@ -37,6 +37,10 @@ npx prisma migrate deploy
 
 これでprismaをmigrateできる
 
+⚪︎Macからpsqlでローカルへ接続
+psql -h localhost -p 5432 -U myfans -d myfans
+パス：password
+
 ⚪︎Macからpsqlで本番環境へ接続
 psql \
   -h himefan-database1.cfqesa8wu2qz.ap-northeast-1.rds.amazonaws.com \
