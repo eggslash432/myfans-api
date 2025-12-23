@@ -10,13 +10,17 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ShopOnlyGuard } from '../access-control/shop-only.guard';
-import { PayoutsService } from '../payments/payouts.service';
 import { CreateShopPayoutDto } from './dto/shop-payout.dto';
+import { PayoutsRequestsService } from '../payments/payouts-requests.service';
+import { PayoutsBalanceService } from '../payments/payouts-balance.service';
 
 @Controller('shops/me/payouts')
 @UseGuards(JwtAuthGuard, ShopOnlyGuard)
 export class ShopPayoutController {
-  constructor(private readonly payouts: PayoutsService) {}
+  constructor(
+    private readonly payoutsRequestService: PayoutsRequestsService,
+    private readonly payoutsBalanceService: PayoutsBalanceService,
+   ) {}
 
   /**
    * 出金可能残高
@@ -29,7 +33,7 @@ export class ShopPayoutController {
       throw new BadRequestException('shop context not found');
     }
 
-    const balance = await this.payouts.getShopBalanceJpy(shopId);
+    const balance = await this.payoutsBalanceService.getShopBalanceJpy(shopId);
     return { balanceJpy: balance };
   }
 
@@ -44,7 +48,7 @@ export class ShopPayoutController {
       throw new BadRequestException('shop context not found');
     }
 
-    return this.payouts.listShopPayouts(shopId);
+    return this.payoutsRequestService.listShopPayouts(shopId);
   }
 
   /**
@@ -61,7 +65,7 @@ export class ShopPayoutController {
       throw new BadRequestException('shop context not found');
     }
 
-    const payout = await this.payouts.requestShopPayout(
+    const payout = await this.payoutsRequestService.requestShopPayout(
       shopId,
       dto.amountJpy,
       dto.note,

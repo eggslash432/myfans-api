@@ -2,11 +2,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PaymentsService } from '../payments.service';
 import { SubStatus } from '@prisma/client';
-
 import { STRIPE_CLIENT } from './stripe-client.provider';
 import { SplitTransferService } from './split-transfer.service';
+import { PaymentsWriterService } from '../writer/payments-writer.service';
 
 @Injectable()
 export class InvoicePaymentSucceededHandler {
@@ -14,7 +13,7 @@ export class InvoicePaymentSucceededHandler {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly payments: PaymentsService,
+    private readonly paymentsWriter: PaymentsWriterService,
     private readonly splitTransfers: SplitTransferService,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
   ) {}
@@ -176,7 +175,7 @@ export class InvoicePaymentSucceededHandler {
     }
 
     // ✅ 先に Payment を作る（Transfer.paymentId 必須のため）
-    const payment = await this.payments.createPaymentWithShareIdempotentV2({
+    const payment = await this.paymentsWriter.createPaymentWithShareIdempotent({
       userId: dbSub.userId,
       creatorId: dbSub.creatorId,
       planId: dbSub.planId,
@@ -186,13 +185,20 @@ export class InvoicePaymentSucceededHandler {
       externalTxId: invoice.id,
     });
 
+    if (!payment) {
+      this.logger.error(
+        `invoice.payment_succeeded: payment is null. invoiceId=${invoice.id}`,
+      );
+      return;
+    }    
+
     // ✅ その後に Transfer（Stripe送金 + DB Transfer）
     await this.splitTransfers.createSplitTransfers({
       paymentId: payment.id,
       externalTxId: invoice.id,
       amountJpy,
       creatorId: dbSub.creatorId,
-      shopId: shopIdResolved,
+      shopId: payment.shopId, // ← ★ここに変更
       chargeId,
     });
 

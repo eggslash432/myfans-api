@@ -10,15 +10,20 @@ export class CreatorAnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getMySimpleAnalytics(userId: string) {
-    const paymentAgg = await this.prisma.payment.aggregate({
-      where: {
-        creatorId: userId,
-        paymentStatus: 'paid' as any,
-      },
-      _sum: { creatorAmountJpy: true },
-    });
+    // ✅ FIX: creatorAmountJpy が NULL の過去データでも売上が 0 にならないように
+    //        SUM(COALESCE(creatorAmountJpy, amountJpy)) を queryRaw で取得する
+    const rows = await this.prisma.$queryRaw<
+      Array<{ revenueJpy: bigint | number | null }>
+    >(Prisma.sql`
+      SELECT
+        COALESCE(SUM(COALESCE("creatorAmountJpy", "amountJpy")), 0) AS "revenueJpy"
+      FROM "Payment"
+      WHERE "creatorId" = ${userId}
+        AND "paymentStatus"::text = ${PaymentStatus.paid}::text
+    `);
 
-    const totalRevenueJpy = paymentAgg._sum.creatorAmountJpy ?? 0;
+    const v = rows?.[0]?.revenueJpy ?? 0;
+    const totalRevenueJpy = typeof v === 'bigint' ? Number(v) : Number(v);
 
     const totalSubscribers = await this.prisma.subscription.count({
       where: {
@@ -67,7 +72,10 @@ export class CreatorAnalyticsService {
     `);
 
     return {
-      points: rows.map((r) => ({ date: r.date, revenueJpy: Number(r.revenueJpy ?? 0n) })),
+      points: rows.map((r) => ({
+        date: r.date,
+        revenueJpy: Number(r.revenueJpy ?? 0n),
+      })),
     };
   }
 
@@ -140,7 +148,9 @@ export class CreatorAnalyticsService {
         ? Prisma.sql`to_char(${truncCan}, 'YYYY-MM')`
         : Prisma.sql`to_char(${truncCan}, 'YYYY-MM-DD')`;
 
-    const newRows = await this.prisma.$queryRaw<Array<{ date: string; cnt: bigint }>>(
+    const newRows = await this.prisma.$queryRaw<
+      Array<{ date: string; cnt: bigint }>
+    >(
       Prisma.sql`
         SELECT
           ${fmtNew} AS "date",
@@ -154,7 +164,9 @@ export class CreatorAnalyticsService {
       `,
     );
 
-    const cancelRows = await this.prisma.$queryRaw<Array<{ date: string; cnt: bigint }>>(
+    const cancelRows = await this.prisma.$queryRaw<
+      Array<{ date: string; cnt: bigint }>
+    >(
       Prisma.sql`
         SELECT
           ${fmtCan} AS "date",

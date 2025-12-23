@@ -11,24 +11,24 @@ import {
   Param,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { PaymentsService } from './payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCheckoutValidatedDto } from './dto/create-checkout.dto';
 import { UserJwt } from 'src/shared/types';
 import { ConfigService } from '@nestjs/config';
+import { StripeCheckoutService } from './stripe/stripe-checkout.service';
 
 @Controller('payments')
 export class PaymentsController {
   constructor(
-    private readonly payments: PaymentsService,
+    private readonly checkout: StripeCheckoutService,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
 
   /**
-   * 1本化された Checkout API
+   * Checkout API（plan / ppv 共通）
    * POST /api/payments/checkout
-   * body: { planId?, postId?, successUrl, cancelUrl }
+   * body: { planId?, postId?, successUrl?, cancelUrl? }
    */
   @UseGuards(JwtAuthGuard)
   @Post('checkout')
@@ -41,34 +41,39 @@ export class PaymentsController {
       throw new UnauthorizedException('Unauthenticated');
     }
 
+    const frontOrigin =
+      this.config.get<string>('FRONT_ORIGIN') ?? 'http://localhost:5173';
+
     const successUrl =
-      dto.successUrl ?? `${this.config.get('FRONT_ORIGIN')}/payments/success`;
+      dto.successUrl ?? `${frontOrigin}/payments/success`;
     const cancelUrl =
-      dto.cancelUrl ?? `${this.config.get('FRONT_ORIGIN')}/payments/cancel`;      
+      dto.cancelUrl ?? `${frontOrigin}/payments/cancel`;
 
     const userId = user.id;
 
-    // ============================================
-    // ① サブスク（planId）
-    // ============================================
+    // ============================
+    // ① サブスク（plan）
+    // ============================
     if (dto.planId) {
       const plan = await this.prisma.plan.findUnique({
         where: { id: dto.planId },
         select: {
           id: true,
-          name: true,
-          priceJpy: true,
           isActive: true,
           creatorId: true,
-          externalPriceId: true,
         },
       });
-      if (!plan) throw new BadRequestException('plan not found');
-      if (!plan.isActive) throw new BadRequestException('plan is inactive');
 
-      const { url } = await this.payments.createCheckoutForPlan(
+      if (!plan) {
+        throw new BadRequestException('plan not found');
+      }
+      if (!plan.isActive) {
+        throw new BadRequestException('plan is inactive');
+      }
+
+      const { url } = await this.checkout.createCheckoutForPlan(
         userId,
-        plan.creatorId,
+        plan.creatorId, // ← creator.userId 前提
         plan.id,
         successUrl,
         cancelUrl,
@@ -77,23 +82,26 @@ export class PaymentsController {
       return { url };
     }
 
-    // ============================================
-    // ② PPV（postId）
-    // ============================================
+    // ============================
+    // ② PPV（post）
+    // ============================
     if (dto.postId) {
       const post = await this.prisma.post.findUnique({
         where: { id: dto.postId },
-        select: { id: true, priceJpy: true, creatorId: true },
+        select: {
+          id: true,
+          priceJpy: true,
+        },
       });
+
       if (!post) {
         throw new BadRequestException('post not found');
       }
       if (!post.priceJpy) {
         throw new BadRequestException('post has no PPV price');
-      }    
+      }
 
-      // ✅ successUrl / cancelUrl を service に渡す
-      const { url } = await this.payments.createCheckoutForPost(
+      const { url } = await this.checkout.createCheckoutForPost(
         userId,
         post.id,
         successUrl,
@@ -106,7 +114,10 @@ export class PaymentsController {
     throw new BadRequestException('Either planId or postId is required');
   }
 
-  // controller の下に追加
+  /**
+   * legacy: PPV checkout
+   * POST /api/payments/ppv/:postId/checkout
+   */
   @UseGuards(JwtAuthGuard)
   @Post('ppv/:postId/checkout')
   async createPpvCheckoutLegacy(
@@ -120,13 +131,20 @@ export class PaymentsController {
 
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      select: { id: true, priceJpy: true },
+      select: {
+        id: true,
+        priceJpy: true,
+      },
     });
 
-    if (!post) throw new BadRequestException('post not found');
-    if (!post.priceJpy) throw new BadRequestException('post has no PPV price');
+    if (!post) {
+      throw new BadRequestException('post not found');
+    }
+    if (!post.priceJpy) {
+      throw new BadRequestException('post has no PPV price');
+    }
 
-    const { url } = await this.payments.createCheckoutForPost(
+    const { url } = await this.checkout.createCheckoutForPost(
       user.id,
       post.id,
       undefined,
@@ -134,5 +152,5 @@ export class PaymentsController {
     );
 
     return { url };
-  }  
+  }
 }

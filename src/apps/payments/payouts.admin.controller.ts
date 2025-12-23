@@ -13,13 +13,13 @@ import {
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminOnlyGuard } from '../access-control/admin-only.guard';
-import { PayoutsService } from './payouts.service';
 import { PayoutStatus, PayoutTargetType } from '@prisma/client';
+import { PayoutsAdminService } from './payouts-admin.service';
 
 @Controller('admin/payouts')
 @UseGuards(JwtAuthGuard, AdminOnlyGuard)
 export class AdminPayoutsController {
-  constructor(private readonly payouts: PayoutsService) {}
+  constructor(private readonly payoutsAdminService: PayoutsAdminService) {}
 
   /**
    * 出金申請一覧（CREATOR / SHOP 統合）
@@ -29,7 +29,7 @@ export class AdminPayoutsController {
     @Query('status') status?: PayoutStatus,
     @Query('targetType') targetType?: PayoutTargetType,
   ) {
-    return this.payouts.adminListPayouts({
+    return this.payoutsAdminService.adminListPayouts({
       status,
       targetType,
     });
@@ -40,7 +40,7 @@ export class AdminPayoutsController {
    */
   @Patch(':id/approve')
   async approve(@Param('id') id: string) {
-    return this.payouts.adminApprove(id);
+    return this.payoutsAdminService.adminApprove(id);
   }
 
   /**
@@ -51,7 +51,7 @@ export class AdminPayoutsController {
     @Param('id') id: string,
     @Body() body: { note?: string },
   ) {
-    return this.payouts.adminReject(id, body.note);
+    return this.payoutsAdminService.adminReject(id, body.note);
   }
 
   /**
@@ -59,7 +59,7 @@ export class AdminPayoutsController {
    */
   @Patch(':id/paid')
   async markPaid(@Param('id') id: string) {
-    return this.payouts.adminMarkPaid(id);
+    return this.payoutsAdminService.adminMarkPaid(id);
   }
 
   @Get('csv')
@@ -67,7 +67,7 @@ export class AdminPayoutsController {
     @Res() res: Response,
     @Query('month') month?: string, // 例: 2025-01
   ) {
-    const csv = await this.payouts.exportPayoutCsv(month);
+    const csv = await this.payoutsAdminService.exportPayoutCsv(month);
 
     const filename = month
       ? `payouts_${month}.csv`

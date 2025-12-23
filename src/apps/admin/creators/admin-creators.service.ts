@@ -1,17 +1,25 @@
 // api/src/apps/admin/creators/admin-creators.service.ts
 
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreatorApprovalStatus } from '@prisma/client';
 
+@Injectable()
 export class AdminCreatorsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listApplications(params: { status?: CreatorApprovalStatus; q?: string }) {
+  async listApplications(params: { status?: any; q?: string }) {
     const { status, q } = params;
 
     const where: any = {};
-    if (status) where.approvalStatus = status;
+
+    // ✅ queryは文字列なので受け側を強くする
+    if (status && status !== 'all') {
+      const s = String(status);
+      const allow = new Set(['pending', 'approved', 'rejected']);
+      if (!allow.has(s)) throw new BadRequestException(`invalid status: ${s}`);
+      where.approvalStatus = s; // Prisma enumが同名ならOK
+    }
 
     if (q?.trim()) {
       const keyword = q.trim();
@@ -59,8 +67,8 @@ export class AdminCreatorsService {
     return {
       items: rows.map((r) => ({
         userId: r.userId,
-        email: r.user.email,
-        displayName: r.user.profile?.displayName ?? null,
+        email: r.user?.email ?? '', // ✅ null安全
+        displayName: r.user?.profile?.displayName ?? null, // ✅ null安全
         publicName: r.publicName,
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,

@@ -125,7 +125,7 @@ export class CreatorApplicationsController {
   }
 
   // ==============================
-  // 承認（Shop管理者）
+  // 承認（Shop管理者 or 単独Creator）
   // ==============================
   @Post(':id/approve')
   async approve(
@@ -144,31 +144,25 @@ export class CreatorApplicationsController {
     if (app.status !== CreatorApprovalStatus.pending) {
       throw new BadRequestException('この申請は処理済みです');
     }
-    if (!app.shopId) {
-      throw new BadRequestException('Shop が指定されていません');
-    }
 
-    // 承認権限チェック
-    const member = await this.prisma.shopMember.findUnique({
-      where: {
-        shopId_userId: {
-          shopId: app.shopId,
-          userId,
-        },
-      },
-    });
-
-    if (!member || !['owner', 'admin'].includes(member.role)) {
-      throw new ForbiddenException('Shop の管理権限がありません');
-    }
-
-    // ---- トランザクション ----
     await this.prisma.$transaction(async (tx) => {
-      // Creator更新
+      let shopId = app.shopId;
+
+      // ✅ Shop が無い creator 用（今回の修正ポイント）
+      if (!shopId) {
+        const shop = await tx.shop.create({
+          data: {
+            name: app.publicName ?? 'My Shop',
+          },
+        });
+        shopId = shop.id;
+      }
+
+      // Creator 更新
       await tx.creator.update({
         where: { userId: app.userId },
         data: {
-          shopId: app.shopId,
+          shopId,
           approvalStatus: CreatorApprovalStatus.approved,
           approvedAt: new Date(),
         },
@@ -180,36 +174,38 @@ export class CreatorApplicationsController {
           id: app.id,
           status: CreatorApprovalStatus.pending,
         },
-        data: { status: CreatorApprovalStatus.approved },
+        data: {
+          status: CreatorApprovalStatus.approved,
+          shopId,
+        },
       });
 
       if (updated.count === 0) {
         throw new BadRequestException('この申請は処理済みです');
       }
 
-      // ShopMember（creator本人）※upsertで安全
+      // ShopMember 登録（本人）
       await tx.shopMember.upsert({
         where: {
           shopId_userId: {
-            shopId: app.shopId!,
+            shopId,
             userId: app.userId,
           },
         },
-        update: { role: ShopMemberRole.staff },
+        update: { role: ShopMemberRole.owner },
         create: {
-          shopId: app.shopId!,
+          shopId,
           userId: app.userId,
-          role: ShopMemberRole.staff,
+          role: ShopMemberRole.owner,
         },
       });
     });
 
-    // ---- 通知 ----
     await this.notifications.notify({
       userId: app.userId,
       type: 'creator_application.approved',
-      title: '所属申請が承認されました',
-      body: `${app.shop?.name ?? 'Shop'} への所属が承認されました`,
+      title: 'クリエイター承認完了',
+      body: 'ショップが有効化されました',
     });
 
     return { success: true };

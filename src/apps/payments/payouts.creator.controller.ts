@@ -11,14 +11,17 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreatorOnlyGuard } from '../access-control/creator-only.guard';
-import { PayoutsService } from './payouts.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PayoutsAdminService } from './payouts-admin.service';
+import { PayoutsBalanceService } from './payouts-balance.service';
+import { PayoutsRequestsService } from './payouts-requests.service';
 
 @Controller('creators/me/payouts')
 @UseGuards(JwtAuthGuard, CreatorOnlyGuard)
 export class CreatorPayoutsController {
   constructor(
-    private readonly payouts: PayoutsService,
+    private readonly payoutsRequestsService: PayoutsRequestsService,
+    private readonly payoutsBalanceService :PayoutsBalanceService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -53,7 +56,7 @@ export class CreatorPayoutsController {
     const creatorId = req.user.id as string;
     await this.assertCreatorCanPayout(creatorId);
 
-    const balance = await this.payouts.getCreatorBalanceJpy(creatorId);
+    const balance = await this.payoutsBalanceService.getCreatorBalanceJpy(creatorId);
     return { balanceJpy: balance };
   }
 
@@ -65,7 +68,7 @@ export class CreatorPayoutsController {
     const creatorId = req.user.id as string;
     await this.assertCreatorCanPayout(creatorId);
 
-    return this.payouts.listCreatorPayouts(creatorId);
+    return this.payoutsRequestsService.listCreatorPayouts(creatorId);
   }
 
   /**
@@ -84,7 +87,7 @@ export class CreatorPayoutsController {
       throw new BadRequestException('amountJpy must be a positive number');
     }
 
-    return this.payouts.requestCreatorPayout(
+    return this.payoutsRequestsService.requestCreatorPayout(
       creatorId,
       amount,
       body.note,

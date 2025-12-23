@@ -4,6 +4,7 @@ import Stripe from 'stripe';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentsService } from '../payments.service';
 import { SplitTransferService } from './split-transfer.service';
+import { PaymentsWriterService } from '../writer/payments-writer.service';
 
 @Injectable()
 export class PaymentIntentSucceededHandler {
@@ -11,7 +12,7 @@ export class PaymentIntentSucceededHandler {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly payments: PaymentsService,
+    private readonly paymentsWriter: PaymentsWriterService,
     private readonly splitTransfers: SplitTransferService,
   ) {}
 
@@ -52,7 +53,7 @@ export class PaymentIntentSucceededHandler {
     const chargeId = typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
 
     // ✅ 先に Payment を作る
-    const payment = await this.payments.createPaymentWithShareIdempotentV2({
+    const payment = await this.paymentsWriter.createPaymentWithShareIdempotent({
       userId,
       creatorId: resolvedCreatorId,
       planId: null,
@@ -61,6 +62,10 @@ export class PaymentIntentSucceededHandler {
       kind: 'one_time',
       externalTxId: pi.id,
     });
+
+    if (!payment) {
+      return;
+    }       
 
     // ✅ その後 Transfer
     await this.splitTransfers.createSplitTransfers({

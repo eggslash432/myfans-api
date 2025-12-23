@@ -5,7 +5,6 @@ import { PaymentsController } from './payments.controller'
 import { PrismaModule } from '../prisma/prisma.module';
 import { PaymentsService } from './payments.service';
 import { StripeWebhookService } from './stripe-webhook.service';
-import { PayoutsService } from './payouts.service';
 import { CreatorPayoutsController } from './payouts.creator.controller';
 import { AdminPayoutsController } from './payouts.admin.controller';
 import { ConfigModule } from '@nestjs/config';
@@ -21,15 +20,28 @@ import { SubscriptionHandler } from './stripe-webhook/subscription.handler';
 import { InvoicePaymentSucceededHandler } from './stripe-webhook/invoice-payment-succeeded.handler';
 import { PaymentIntentSucceededHandler } from './stripe-webhook/payment-intent-succeeded.handler';
 import { SplitTransferService } from './stripe-webhook/split-transfer.service';
+import { PaymentShareService } from './share/payment-share.service';
+import { StripeCheckoutService } from './stripe/stripe-checkout.service';
+import { PaymentsWriterService } from './writer/payments-writer.service';
+import { PayoutsModule } from './payouts.module';
 
 
 @Module({
-  imports: [PrismaModule, ConfigModule, HelpersModule],
-  controllers: [PaymentsController, CreatorPayoutsController, AdminPayoutsController, StripeWebhookController],
+  imports: [
+    PrismaModule, 
+    ConfigModule, 
+    HelpersModule,
+    PayoutsModule,
+  ],
+  controllers: [
+    PaymentsController, 
+    CreatorPayoutsController, 
+    AdminPayoutsController, 
+    StripeWebhookController
+  ],
   providers: [
     PaymentsService, 
     StripeWebhookService, 
-    PayoutsService, 
     PrismaService,
     WebhookGate,
     StripeClientProvider,
@@ -39,7 +51,15 @@ import { SplitTransferService } from './stripe-webhook/split-transfer.service';
     InvoicePaymentSucceededHandler,
     PaymentIntentSucceededHandler,
     SplitTransferService,    
+    PaymentShareService,
+    StripeCheckoutService,
+    PaymentsWriterService,   
   ],
-  exports:[PayoutsService, PaymentsService, StripeWebhookService],
+  exports:[
+    PaymentsService, 
+    PaymentsWriterService,
+    StripeCheckoutService,
+    StripeWebhookService,
+  ],
 })
 export class PaymentsModule {}

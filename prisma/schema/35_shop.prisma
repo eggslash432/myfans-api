@@ -13,6 +13,7 @@ model Shop {
   applications CreatorApplication[]
   invites      ShopInvite[] @relation("ShopInvites")
   transfers    Transfer[] @relation("ShopTransfers")
+  payments Payment[]
   payouts Payout[]
 
 }

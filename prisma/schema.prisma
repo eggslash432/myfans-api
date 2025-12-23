@@ -283,6 +283,7 @@ model Shop {
   applications CreatorApplication[]
   invites      ShopInvite[] @relation("ShopInvites")
   transfers    Transfer[] @relation("ShopTransfers")
+  payments Payment[]
   payouts Payout[]
 
 }
@@ -377,10 +378,16 @@ model Payment {
   planId    String?
   postId    String?
 
+  // ✅ 追加：ショップ（どの店舗の売上か）
+  shopId    String?
+
   user    User?    @relation(fields: [userId], references: [id])
   creator Creator? @relation(fields: [creatorId], references: [userId])
   plan    Plan?    @relation(fields: [planId], references: [id])
   post    Post?    @relation(fields: [postId], references: [id])
+
+  // shop リレーション（Shopモデルがある前提）
+  shop    Shop?    @relation(fields: [shopId], references: [id])
 
   kind          PaymentKind
   amountJpy     Int
@@ -395,7 +402,9 @@ model Payment {
   shopPercent    Int?
   creatorPercent Int?
 
+  // ✅ 追加：金額を3者で保持
   creatorAmountJpy  Int?
+  shopAmountJpy     Int?
   platformAmountJpy Int?
 
   transfers Transfer[]
@@ -404,7 +413,9 @@ model Payment {
   @@index([creatorId])
   @@index([planId])
   @@index([postId])
+  @@index([shopId])
 }
+
 
 model WebhookLog {
   id String @id @default(uuid())

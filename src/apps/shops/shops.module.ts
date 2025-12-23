@@ -14,8 +14,14 @@ import { ShopDashboardController } from './shop-dashboard.controller';
 import { ShopMeController } from './shop-me.controller';
 import { ShopPayoutController } from './shop-payout.controller';
 import { ShopPayoutService } from './shop-payout.service';
+import { PaymentsModule } from '../payments/payments.module';
+import { PayoutsModule } from '../payments/payouts.module';
 
 @Module({
+  imports:[
+    PaymentsModule,
+    PayoutsModule,
+  ],
   controllers: [
     ShopInvitesController,
     ShopCreateController,

@@ -12,33 +12,47 @@ export class AdminSummaryController {
 
   @Get()
   async getSummary() {
-    // 月初
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    const payments = await this.prisma.payment.aggregate({
+    const paymentsAgg = await this.prisma.payment.aggregate({
       where: {
         paidAt: { gte: monthStart },
         paymentStatus: 'paid',
       },
-      _sum: { platformAmountJpy: true },
+      _sum: {
+        amountJpy: true,
+        platformAmountJpy: true,
+        shopAmountJpy: true,
+        creatorAmountJpy: true,
+      },
     });
 
-    // 月間新規ユーザー
+    const gmvMonthly = paymentsAgg._sum.amountJpy ?? 0;
+    const platformSalesMonthly = paymentsAgg._sum.platformAmountJpy ?? 0;
+    const shopSalesMonthly = paymentsAgg._sum.shopAmountJpy ?? 0;
+    const creatorSalesMonthly = paymentsAgg._sum.creatorAmountJpy ?? 0;
+
     const newUsers = await this.prisma.user.count({
       where: { createdAt: { gte: monthStart } },
     });
 
-    // 未対応通報数
     const pendingReports = await this.prisma.report.count({
       where: { status: 'pending' },
     });
 
     return {
-      salesMonthly: payments._sum.platformAmountJpy ?? 0,
+      // ✅ 旧キー（フロント互換のため残す）
+      salesMonthly: platformSalesMonthly, // ←フロントがこれを使ってるはず
       newUsersMonthly: newUsers,
       reportsPending: pendingReports,
+
+      // ✅ 新キー（内訳）
+      gmvMonthly,
+      platformSalesMonthly,
+      shopSalesMonthly,
+      creatorSalesMonthly,
     };
   }
 }

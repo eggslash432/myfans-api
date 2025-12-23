@@ -47,14 +47,14 @@ async function main() {
   const fan = await upsertUser(
     'user1@example.com',
     Role.user,
-    'userpass'
+    'password'
   );
 
   // 2) クリエイター用ユーザー（role は user のまま）
   const creatorUser = await upsertUser(
-    'user2@example.com',
+    'creator1@example.com',
     Role.user,
-    'creatorpass'
+    'password'
   );
 
   // 3) Creator レコードを作る（ここが分岐点）

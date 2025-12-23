@@ -57,8 +57,9 @@ export class StripeWebhookController {
 
     try {
       // ★ rawBody 必須（bodyParser.raw で注入される）
+      const raw = req.body as any;
       event = this.stripe.webhooks.constructEvent(
-        req.rawBody,
+        raw,
         signature,
         whSecret,
       );
