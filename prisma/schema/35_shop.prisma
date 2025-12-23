@@ -1,0 +1,46 @@
+//api/prisma/schema/35_shop.prisma
+
+model Shop {
+  id              String @id @default(uuid())
+  name            String
+  stripeAccountId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  creators     Creator[]
+  members      ShopMember[]
+  applications CreatorApplication[]
+  invites      ShopInvite[] @relation("ShopInvites")
+  transfers    Transfer[] @relation("ShopTransfers")
+  payouts Payout[]
+
+}
+
+model ShopMember {
+  id        String   @id @default(uuid())
+  shopId    String
+  userId    String
+  role      ShopMemberRole @default(staff)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, userId], name: "shopId_userId")
+  @@index([userId])
+  @@index([shopId, role])
+}
+
+model ShopInvite {
+  id        String   @id @default(cuid())
+  shopId    String
+  code      String   @unique
+  role      ShopMemberRole @default(staff)
+  createdBy String
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+
+  shop      Shop     @relation("ShopInvites", fields: [shopId], references: [id], onDelete: Cascade)
+}

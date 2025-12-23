@@ -99,6 +99,11 @@ enum PaymentStatus {
   refunded
 }
 
+enum PayoutTargetType {
+  CREATOR
+  SHOP
+}
+
 enum SubStatus {
   active
   trialing
@@ -184,22 +189,6 @@ model Profile {
   updatedAt DateTime @updatedAt
 }
 
-model ShopMember {
-  id        String   @id @default(uuid())
-  shopId    String
-  userId    String
-  role      ShopMemberRole @default(staff)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([shopId, userId], name: "shopId_userId")
-  @@index([userId])
-  @@index([shopId, role])
-}
-
 // ===== 30_creator_kyc.prisma =====
 //api/prisma/schema/30_creator_kyc.prisma
 
@@ -278,6 +267,9 @@ model KycSubmission {
   @@index([status, createdAt])
 }
 
+// ===== 35_shop.prisma =====
+//api/prisma/schema/35_shop.prisma
+
 model Shop {
   id              String @id @default(uuid())
   name            String
@@ -291,6 +283,24 @@ model Shop {
   applications CreatorApplication[]
   invites      ShopInvite[] @relation("ShopInvites")
   transfers    Transfer[] @relation("ShopTransfers")
+  payouts Payout[]
+
+}
+
+model ShopMember {
+  id        String   @id @default(uuid())
+  shopId    String
+  userId    String
+  role      ShopMemberRole @default(staff)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, userId], name: "shopId_userId")
+  @@index([userId])
+  @@index([shopId, role])
 }
 
 model ShopInvite {
@@ -579,18 +589,29 @@ model Transfer {
 
 
 model Payout {
-  id        String @id @default(uuid())
-  creatorId String
-  creator   Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  id String @id @default(uuid())
 
-  amountJpy    Int
-  payoutStatus PayoutStatus
-  note         String?
+  // ✅ 申請主体
+  targetType PayoutTargetType
+
+  // ✅ CREATOR申請のときだけ入る
+  creatorId String?
+  creator   Creator? @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+
+  // ✅ SHOP申請のときだけ入る（Shopの主キーに合わせて変更）
+  shopId String?
+  shop   Shop? @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  amountJpy     Int
+  payoutStatus  PayoutStatus
+  note          String?
 
   requestedAt DateTime @default(now())
   paidAt      DateTime?
 
+  @@index([targetType, payoutStatus])
   @@index([creatorId, payoutStatus])
+  @@index([shopId, payoutStatus])
 }
 
 model FeeSetting {

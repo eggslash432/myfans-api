@@ -75,29 +75,3 @@ model KycSubmission {
   @@index([status, createdAt])
 }
 
-model Shop {
-  id              String @id @default(uuid())
-  name            String
-  stripeAccountId String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  creators     Creator[]
-  members      ShopMember[]
-  applications CreatorApplication[]
-  invites      ShopInvite[] @relation("ShopInvites")
-  transfers    Transfer[] @relation("ShopTransfers")
-}
-
-model ShopInvite {
-  id        String   @id @default(cuid())
-  shopId    String
-  code      String   @unique
-  role      ShopMemberRole @default(staff)
-  createdBy String
-  createdAt DateTime @default(now())
-  expiresAt DateTime?
-
-  shop      Shop     @relation("ShopInvites", fields: [shopId], references: [id], onDelete: Cascade)
-}

@@ -83,6 +83,11 @@ enum PaymentStatus {
   refunded
 }
 
+enum PayoutTargetType {
+  CREATOR
+  SHOP
+}
+
 enum SubStatus {
   active
   trialing

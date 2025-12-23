@@ -22,18 +22,29 @@ model Transfer {
 
 
 model Payout {
-  id        String @id @default(uuid())
-  creatorId String
-  creator   Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  id String @id @default(uuid())
 
-  amountJpy    Int
-  payoutStatus PayoutStatus
-  note         String?
+  // ✅ 申請主体
+  targetType PayoutTargetType
+
+  // ✅ CREATOR申請のときだけ入る
+  creatorId String?
+  creator   Creator? @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+
+  // ✅ SHOP申請のときだけ入る（Shopの主キーに合わせて変更）
+  shopId String?
+  shop   Shop? @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  amountJpy     Int
+  payoutStatus  PayoutStatus
+  note          String?
 
   requestedAt DateTime @default(now())
   paidAt      DateTime?
 
+  @@index([targetType, payoutStatus])
   @@index([creatorId, payoutStatus])
+  @@index([shopId, payoutStatus])
 }
 
 model FeeSetting {
