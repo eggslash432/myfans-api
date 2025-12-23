@@ -21,7 +21,7 @@ export class ShopSalesController {
    * GET /shop/sales/summary?range=today|month|all
    * - Transfer(kind=shop) を shopId で絞って合計（Stripe未連携でも台帳が残る想定）
    */
-  @Get('shop/sales/summary')
+  @Get('shops/sales/summary')
   async salesSummary(
     @Req() req: Request,
     @Query('range') range?: 'today' | 'month' | 'all',

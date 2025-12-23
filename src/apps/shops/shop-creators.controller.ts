@@ -19,7 +19,7 @@ export class ShopCreatorsController {
    * - 自分の所属shopの approved creator 一覧
    * - owner/admin のみ
    */
-  @Get('shop/creators')
+  @Get('shops/creators')
   async listCreators(@Req() req: Request) {
     const { shopId } = await this.shopAuth.getMyShopMemberOrThrow(req, [
       'owner',

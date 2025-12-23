@@ -10,7 +10,7 @@ import { ShopAuthService } from './shop-auth.service';
 export class ShopMeController {
   constructor(private readonly shopAuth: ShopAuthService) {}
 
-  @Get('shop/me')
+  @Get('shops/me')
   async me(@Req() req: Request) {
     const me = await this.shopAuth.getMyShopMemberOrThrow(req);
     return { shopId: me.shopId, role: me.role };

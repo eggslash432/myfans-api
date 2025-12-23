@@ -24,10 +24,10 @@ export class ShopDashboardController {
   ) {}
 
   /**
-   * GET /shop/dashboard/summary
+   * GET /shops/dashboard/summary
    * - ✅ Transfer(kind=shop) の createdAt 基準で集計（sales/summary と基準統一）
    */
-  @Get('shop/dashboard/summary')
+  @Get('shops/dashboard/summary')
   async dashboardSummary(@Req() req: Request): Promise<DashboardSummaryRes> {
     const { shopId } = await this.shopAuth.getMyShopMemberOrThrow(req);
 

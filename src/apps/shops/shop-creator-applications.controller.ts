@@ -19,7 +19,7 @@ export class ShopCreatorApplicationsController {
    * GET /shop/creator-applications?status=pending|approved|rejected...
    * - 自分の所属shopの申請一覧（カーソル対応）
    */
-  @Get('shop/creator-applications')
+  @Get('shops/creator-applications')
   async listCreatorApplications(
     @Req() req: Request,
     @Query('status') status?: string,
