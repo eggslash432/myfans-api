@@ -5,15 +5,21 @@ model Transfer {
   paymentId String
   payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
-  kind            TransferKind
-  amountJpy       Int
-  destinationAcct String
+  kind             TransferKind
+  amountJpy        Int
+  destinationAcct  String
   stripeTransferId String? @unique
+
+  shopId String?
+  shop   Shop? @relation("ShopTransfers", fields: [shopId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 
   @@index([paymentId])
+  @@index([shopId])
+  @@index([kind, shopId])
 }
+
 
 model Payout {
   id        String @id @default(uuid())

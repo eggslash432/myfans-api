@@ -83,10 +83,11 @@ model Shop {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  creators Creator[]
-  members     ShopMember[]
+  creators     Creator[]
+  members      ShopMember[]
   applications CreatorApplication[]
-  invites ShopInvite[] @relation("ShopInvites")
+  invites      ShopInvite[] @relation("ShopInvites")
+  transfers    Transfer[] @relation("ShopTransfers")
 }
 
 model ShopInvite {

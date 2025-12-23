@@ -116,9 +116,12 @@ export class CreatorsMeController {
 
   @Post('posts')
   async createMyPost(@Req() req: any, @Body() dto: CreatePostDto) {
-    const userId = this.helpers.getUserIdOrThrow(req);
-    const creator = await this.helpers.requireCreatorApproved(userId);
+    // const userId = this.helpers.getUserIdOrThrow(req);
+    // const creator = await this.helpers.requireCreatorApproved(userId);
 
+    const creator = await this.helpers.requireCreatorApprovedOrAdmin(req);
+
+    // 以降そのまま
     if (dto.visibility === Visibility.plan) {
       if (!(dto as any).planId) throw new BadRequestException('planId が必要です');
     }

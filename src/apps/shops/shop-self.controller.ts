@@ -14,9 +14,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import {
   CreatorApprovalStatus,
-  PaymentStatus,
-  ShopMemberRole,
   SubStatus,
+  TransferKind,
 } from '@prisma/client';
 import { ShopAuthService } from './shop-auth.service';
 
@@ -35,13 +34,13 @@ function startOfMonthLocal(): Date {
 
 type SalesSummaryRes = {
   range: 'today' | 'month' | 'all';
-  gross: number;
-  paidCount: number;
+  gross: number;      // ✅ shop取り分の合計
+  paidCount: number;  // ✅ shop取り分が発生した件数（payment単位）
 };
 
 type DashboardSummaryRes = {
-  todayGross: number;
-  monthGross: number;
+  todayGross: number; // ✅ shop取り分（今日）
+  monthGross: number; // ✅ shop取り分（今月）
   activeSubscribers: number;
   pendingCreatorApplications: number;
 };
@@ -99,7 +98,7 @@ export class ShopSelfController {
 
   /**
    * GET /shop/sales/summary?range=today|month|all
-   * - Payment を creator.shopId で絞って合計
+   * - ✅ Transfer(kind=shop) を shopId で絞って合計（Stripe未連携でも台帳が残る想定）
    */
   @Get('shop/sales/summary')
   async salesSummary(
@@ -113,26 +112,32 @@ export class ShopSelfController {
       throw new BadRequestException('range は today|month|all のいずれかです');
     }
 
+    // ✅ Transfer から集計する（payment.createdAt で期間を切る）
     const where: any = {
-      paymentStatus: PaymentStatus.paid,
-      creator: { shopId },
+      kind: TransferKind.shop,
+      shopId, // ✅ ここで固定帰属
     };
 
-    if (r === 'today') where.createdAt = { gte: startOfTodayLocal() };
-    if (r === 'month') where.createdAt = { gte: startOfMonthLocal() };
+    if (r === 'today') where.payment = { createdAt: { gte: startOfTodayLocal() } };
+    if (r === 'month') where.payment = { createdAt: { gte: startOfMonthLocal() } };
 
-    const [agg, paidCount] = await Promise.all([
-      this.prisma.payment.aggregate({
+    const [agg, distinctPayments] = await Promise.all([
+      this.prisma.transfer.aggregate({
         where,
         _sum: { amountJpy: true },
       }),
-      this.prisma.payment.count({ where }),
+      // paidCount は「ショップ取り分が発生した支払い件数」＝ paymentId の distinct
+      this.prisma.transfer.findMany({
+        where,
+        distinct: ['paymentId'],
+        select: { paymentId: true },
+      }),
     ]);
 
     return {
       range: r,
       gross: Number(agg?._sum?.amountJpy ?? 0),
-      paidCount,
+      paidCount: distinctPayments.length,
     };
   }
 
@@ -194,24 +199,31 @@ export class ShopSelfController {
     const monthFrom = startOfMonthLocal();
 
     const [todayAgg, monthAgg, subsDistinct, pendingApps] = await Promise.all([
-      this.prisma.payment.aggregate({
+      // ✅ 今日の shop 取り分
+      this.prisma.transfer.aggregate({
         where: {
-          paymentStatus: PaymentStatus.paid,
-          createdAt: { gte: todayFrom },
-          creator: { shopId },
+          kind: TransferKind.shop,
+          payment: {
+            createdAt: { gte: todayFrom },
+            creator: { shopId },
+          },
         },
         _sum: { amountJpy: true },
       }),
 
-      this.prisma.payment.aggregate({
+      // ✅ 今月の shop 取り分
+      this.prisma.transfer.aggregate({
         where: {
-          paymentStatus: PaymentStatus.paid,
-          createdAt: { gte: monthFrom },
-          creator: { shopId },
+          kind: TransferKind.shop,
+          payment: {
+            createdAt: { gte: monthFrom },
+            creator: { shopId },
+          },
         },
         _sum: { amountJpy: true },
       }),
 
+      // アクティブ購読者（クリエイターが所属するshopの分）
       this.prisma.subscription.findMany({
         where: {
           status: { in: [SubStatus.active, SubStatus.trialing] },
@@ -234,7 +246,7 @@ export class ShopSelfController {
     };
   }
 
-  @Get("shop/me")
+  @Get('shop/me')
   async me(@Req() req: Request) {
     const me = await this.shopAuth.getMyShopMemberOrThrow(req);
     return { shopId: me.shopId, role: me.role }; // role: owner|admin|staff

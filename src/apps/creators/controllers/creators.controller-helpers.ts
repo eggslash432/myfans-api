@@ -41,4 +41,21 @@ export class CreatorsControllerHelpers {
     if (!Number.isFinite(n)) return def;
     return Math.min(Math.max(Math.trunc(n), min), max);
   }
+
+  async requireCreatorApprovedOrAdmin(req: any) {
+    const userId = this.getUserIdOrThrow(req);
+    const role = String(req?.user?.role ?? '');
+
+    const creator = await this.getCreatorByUserId(userId);
+    if (!creator) throw new ForbiddenException('クリエイター登録が必要です');
+
+    // ✅ admin はスキップ
+    if (role === 'admin') return creator;
+
+    if (creator.approvalStatus !== 'approved') {
+      throw new ForbiddenException('承認済みクリエイターのみ実行できます');
+    }
+    return creator;
+  }
+
 }
