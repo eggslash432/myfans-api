@@ -17,7 +17,7 @@ export class StripeWebhookService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly payments: PaymentsService, // ※未使用でも残してOK（他handlerで使うなら）
+    private readonly payments: PaymentsService,
     private readonly gate: WebhookGate,
     private readonly accountUpdated: AccountUpdatedHandler,
     private readonly checkout: CheckoutHandler,
@@ -27,6 +27,7 @@ export class StripeWebhookService {
   ) {}
 
   async processEvent(event: Stripe.Event) {
+    // ===== ① 冪等ゲート =====
     const gate = await this.gate.ensureWebhookEvent(event);
 
     if (gate.alreadyProcessed) {
@@ -34,10 +35,13 @@ export class StripeWebhookService {
       return;
     }
 
-    await this.gate.logWebhook(gate.eventRowId, 'receive', true, `${event.type}`);
+    await this.gate.logWebhook(gate.eventRowId, 'receive', true, event.type);
 
     try {
       switch (event.type) {
+        // =========================
+        // 既存イベント
+        // =========================
         case 'account.updated':
           await this.accountUpdated.handle(event.data.object as Stripe.Account);
           await this.gate.logWebhook(gate.eventRowId, 'handle.account.updated', true);
@@ -69,13 +73,29 @@ export class StripeWebhookService {
           break;
 
         case 'payment_intent.succeeded':
-          await this.piSucceeded.handle(event.data.object as Stripe.PaymentIntent);
+          await this.piSucceeded.handle(
+            event.data.object as Stripe.PaymentIntent,
+          );
           await this.gate.logWebhook(
             gate.eventRowId,
             'handle.payment_intent.succeeded',
             true,
           );
           break;
+
+        // =========================
+        // ★ 出金（Payout / Transfer）
+        // =========================
+        case 'transfer.created': {
+          const transfer = event.data.object as Stripe.Transfer;
+          await this.handleTransferCreated(transfer);
+          await this.gate.logWebhook(
+            gate.eventRowId,
+            'handle.transfer.created',
+            true,
+          );
+          break;
+        }
 
         default:
           await this.gate.logWebhook(
@@ -87,6 +107,7 @@ export class StripeWebhookService {
           break;
       }
 
+      // ===== ② 処理完了マーク =====
       await this.prisma.webhookEvent.update({
         where: { id: gate.eventRowId },
         data: { processed: true, processedAt: new Date() },
@@ -99,8 +120,65 @@ export class StripeWebhookService {
         false,
         e?.stack || e?.message || String(e),
       );
-      this.logger.error(`event failed: ${event.id} (${event.type})`, e?.stack || e);
+      this.logger.error(
+        `event failed: ${event.id} (${event.type})`,
+        e?.stack || e,
+      );
       throw e;
     }
   }
+
+  /**
+   * Stripe Transfer 完了 → payout を paid にする
+   * 冪等前提（WebhookGate + payoutStatus チェック）
+   */
+  private async handleTransferCreated(transfer: Stripe.Transfer) {
+    // description に payoutId を仕込んでいる前提
+    const payoutId = extractPayoutId(transfer.description);
+    if (!payoutId) {
+      this.logger.warn(`transfer ${transfer.id} has no payoutId`);
+      return;
+    }
+
+    const payout = await this.prisma.payout.findUnique({
+      where: { id: payoutId },
+    });
+
+    if (!payout) {
+      this.logger.warn(`payout not found: ${payoutId}`);
+      return;
+    }
+
+    // すでに paid → 何もしない（冪等）
+    if (payout.payoutStatus === 'paid') {
+      return;
+    }
+
+    // approved 以外は想定外（ログのみ）
+    if (payout.payoutStatus !== 'approved') {
+      this.logger.warn(
+        `payout ${payout.id} invalid status: ${payout.payoutStatus}`,
+      );
+      return;
+    }
+
+    await this.prisma.payout.update({
+      where: { id: payout.id },
+      data: {
+        payoutStatus: 'paid',
+        paidAt: new Date(),
+        note: `transferId=${transfer.id}`,
+      },
+    });
+  }
+}
+
+/**
+ * description から payoutId を抽出
+ * 例: "Payout payout_abc123"
+ */
+function extractPayoutId(desc?: string | null): string | null {
+  if (!desc) return null;
+  const m = desc.match(/payout[_\s:]+([a-zA-Z0-9_-]+)/i);
+  return m?.[1] ?? null;
 }

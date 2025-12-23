@@ -55,7 +55,14 @@ async function bootstrap() {
   
   // Stripe Webhook は raw body 必須 → ルートに合わせて設定
   // 実装: @Post('webhooks/stripe') → /payments/webhooks/stripe
-  app.use('/api/payments/webhook', bodyParser.raw({ type: 'application/json' }));
+  app.use(
+    '/payments/webhook', 
+    bodyParser.raw({ type: 'application/json' })
+  );
+  app.use(
+    '/stripe/webhook',
+    bodyParser.raw({ type: 'application/json' }),
+  );  
   // かつ bodyParser.json の verify で req.rawBody をセット
   app.use(
     bodyParser.json({

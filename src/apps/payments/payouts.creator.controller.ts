@@ -7,6 +7,7 @@ import {
   Req,
   UseGuards,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreatorOnlyGuard } from '../access-control/creator-only.guard';
@@ -18,15 +19,13 @@ import { PrismaService } from '../prisma/prisma.service';
 export class CreatorPayoutsController {
   constructor(
     private readonly payouts: PayoutsService,
-    private readonly prisma: PrismaService, // ★ 追加
+    private readonly prisma: PrismaService,
   ) {}
 
-  // 残高取得
-  @Get('balance')
-  async getBalance(@Req() req: any) {
-    const creatorId = req.user.id as string;
-    
-    // ★ KYC チェック（出金のとき重要）
+  /**
+   * 共通：KYCチェック
+   */
+  private async assertCreatorCanPayout(creatorId: string) {
     const creator = await this.prisma.creator.findUnique({
       where: { userId: creatorId },
       select: {
@@ -36,72 +35,59 @@ export class CreatorPayoutsController {
     });
 
     if (!creator || creator.stripeKycStatus !== 'approved') {
-      throw new ForbiddenException('KYC未完了のため残高を取得できません。');
+      throw new ForbiddenException('KYC未完了のため利用できません。');
     }
 
     if (!creator.stripePayoutsEnabled) {
       throw new ForbiddenException(
-        'Stripe側の審査が未完了のため、出金機能が利用できません。',
+        'Stripe側の審査が未完了のため利用できません。',
       );
     }
+  }
+
+  /**
+   * 残高取得
+   */
+  @Get('balance')
+  async getBalance(@Req() req: any) {
+    const creatorId = req.user.id as string;
+    await this.assertCreatorCanPayout(creatorId);
 
     const balance = await this.payouts.getCreatorBalanceJpy(creatorId);
     return { balanceJpy: balance };
   }
 
-  // 自分の Payout 一覧
+  /**
+   * 自分の出金履歴
+   */
   @Get()
   async listMine(@Req() req: any) {
     const creatorId = req.user.id as string;
+    await this.assertCreatorCanPayout(creatorId);
 
-    // ★ KYC チェック（一覧も禁止する）
-    const creator = await this.prisma.creator.findUnique({
-      where: { userId: creatorId },
-      select: {
-        stripeKycStatus: true,
-        stripePayoutsEnabled: true,
-      },
-    });
-
-    if (!creator || creator.stripeKycStatus !== 'approved') {
-      throw new ForbiddenException('KYC未完了のため出金履歴を表示できません。');
-    }
-
-    if (!creator.stripePayoutsEnabled) {
-      throw new ForbiddenException(
-        'Stripe側の審査が未完了のため、出金履歴を表示できません。',
-      );
-    }
-
-    const all = await this.payouts.adminListPayouts(undefined);
-    return all.filter((p) => p.creatorId === creatorId);
+    return this.payouts.listCreatorPayouts(creatorId);
   }
 
-  // 出金リクエスト
+  /**
+   * 出金申請
+   */
   @Post('request')
-  async request(@Req() req: any, @Body() body: { amountJpy: number }) {
+  async request(
+    @Req() req: any,
+    @Body() body: { amountJpy: number; note?: string },
+  ) {
     const creatorId = req.user.id as string;
+    await this.assertCreatorCanPayout(creatorId);
+
     const amount = Number(body.amountJpy);
-
-    // ★ KYC チェック（ここが最重要）
-    const creator = await this.prisma.creator.findUnique({
-      where: { userId: creatorId },
-      select: {
-        stripeKycStatus: true,
-        stripePayoutsEnabled: true,
-      },
-    });
-
-    if (!creator || creator.stripeKycStatus !== 'approved') {
-      throw new ForbiddenException('KYC未完了のため出金リクエストはできません。');
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('amountJpy must be a positive number');
     }
 
-    if (!creator.stripePayoutsEnabled) {
-      throw new ForbiddenException(
-        'Stripe側の審査が未完了のため、出金リクエストはできません。',
-      );
-    }
-
-    return this.payouts.requestPayout(creatorId, amount);
+    return this.payouts.requestCreatorPayout(
+      creatorId,
+      amount,
+      body.note,
+    );
   }
 }

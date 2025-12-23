@@ -1,5 +1,3 @@
-// src/apps/creators/creator-payouts.controller.ts
-
 import {
   BadRequestException,
   Body,
@@ -12,7 +10,6 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatorHelper } from '../helpers/creator.helper';
-import { PayoutStatus } from '@prisma/client';
 import { UserJwt } from 'src/shared/types';
 
 @Controller('creators/me/payouts')
@@ -24,21 +21,10 @@ export class CreatorPayoutsController {
   ) {}
 
   /**
-   * ① 出金可能残高の取得
-   * GET /api/creators/me/payouts/balance
-   *
-   * フロント期待: { balanceJpy: number }
+   * 共通：creator の出金可能残高を計算
    */
-  @Get('balance')
-  async getBalance(@Req() req: any) {
-    const user = req.user as UserJwt | undefined;
-    const userId = user?.id ;
-    if (!userId) throw new BadRequestException('Unauthenticated');
-
-    // クリエイターID（＝userId）を取得＆creator 以外は弾く
-    const creatorId = await this.creatorHelper.getMyCreatorId(userId);
-
-    // 1) creator の売上（creatorAmountJpy の合計。status=paid のみ）
+  private async calcBalance(creatorId: string): Promise<number> {
+    // 1) creator の確定売上（paid のみ）
     const paymentsAgg = await this.prisma.payment.aggregate({
       where: {
         creatorId,
@@ -49,14 +35,15 @@ export class CreatorPayoutsController {
       },
     });
 
-    const totalEarnings = paymentsAgg._sum.creatorAmountJpy ?? 0;
+    const totalEarnings = paymentsAgg._sum?.creatorAmountJpy ?? 0;
 
-    // 2) すでに requested / approved / paid 済みの出金申請合計
+    // 2) 既に申請・承認・支払済みの出金合計（CREATORのみ）
     const payoutsAgg = await this.prisma.payout.aggregate({
       where: {
+        targetType: 'CREATOR',
         creatorId,
         payoutStatus: {
-          in: ['requested', 'approved', 'paid'] as PayoutStatus[],
+          in: ['requested', 'approved', 'paid'],
         },
       },
       _sum: {
@@ -64,10 +51,26 @@ export class CreatorPayoutsController {
       },
     });
 
-    const requestedOrPaid = payoutsAgg._sum.amountJpy ?? 0;
+    const requestedOrPaid = payoutsAgg._sum?.amountJpy ?? 0;
 
-    // 3) 残高 = 売上 - 出金申請済み
-    const balance = Math.max(totalEarnings - requestedOrPaid, 0);
+    // 3) 残高
+    return Math.max(totalEarnings - requestedOrPaid, 0);
+  }
+
+  /**
+   * ① 出金可能残高の取得
+   * GET /api/creators/me/payouts/balance
+   *
+   * フロント期待: { balanceJpy: number }
+   */
+  @Get('balance')
+  async getBalance(@Req() req: any) {
+    const user = req.user as UserJwt | undefined;
+    const userId = user?.id;
+    if (!userId) throw new BadRequestException('Unauthenticated');
+
+    const creatorId = await this.creatorHelper.getMyCreatorId(userId);
+    const balance = await this.calcBalance(creatorId);
 
     return { balanceJpy: balance };
   }
@@ -75,23 +78,23 @@ export class CreatorPayoutsController {
   /**
    * ② 出金履歴一覧
    * GET /api/creators/me/payouts
-   *
-   * フロント期待: Payout[]（id, amountJpy, payoutStatus, requestedAt, paidAt, note）
    */
   @Get()
   async listPayouts(@Req() req: any) {
     const user = req.user as UserJwt | undefined;
-    const userId = user?.id ;
+    const userId = user?.id;
     if (!userId) throw new BadRequestException('Unauthenticated');
 
     const creatorId = await this.creatorHelper.getMyCreatorId(userId);
 
     const items = await this.prisma.payout.findMany({
-      where: { creatorId },
+      where: {
+        targetType: 'CREATOR',
+        creatorId,
+      },
       orderBy: { requestedAt: 'desc' },
     });
 
-    // そのまま返せば PayoutsPage.tsx の型と合う
     return items;
   }
 
@@ -110,7 +113,7 @@ export class CreatorPayoutsController {
     },
   ) {
     const user = req.user as UserJwt | undefined;
-    const userId = user?.id ;
+    const userId = user?.id;
     if (!userId) throw new BadRequestException('Unauthenticated');
 
     const creatorId = await this.creatorHelper.getMyCreatorId(userId);
@@ -120,32 +123,8 @@ export class CreatorPayoutsController {
       throw new BadRequestException('amountJpy must be a positive number');
     }
 
-    // 現在の残高を再計算（上と同じロジック）
-    const paymentsAgg = await this.prisma.payment.aggregate({
-      where: {
-        creatorId,
-        paymentStatus: 'paid',
-      },
-      _sum: {
-        creatorAmountJpy: true,
-      },
-    });
-    const totalEarnings = paymentsAgg._sum.creatorAmountJpy ?? 0;
-
-    const payoutsAgg = await this.prisma.payout.aggregate({
-      where: {
-        creatorId,
-        payoutStatus: {
-          in: ['requested', 'approved', 'paid'] as PayoutStatus[],
-        },
-      },
-      _sum: {
-        amountJpy: true,
-      },
-    });
-    const requestedOrPaid = payoutsAgg._sum.amountJpy ?? 0;
-
-    const balance = Math.max(totalEarnings - requestedOrPaid, 0);
+    // 残高チェック（共通ロジック）
+    const balance = await this.calcBalance(creatorId);
 
     if (amount > balance) {
       throw new BadRequestException(
@@ -155,6 +134,7 @@ export class CreatorPayoutsController {
 
     const payout = await this.prisma.payout.create({
       data: {
+        targetType: 'CREATOR',
         creatorId,
         amountJpy: amount,
         payoutStatus: 'requested',
