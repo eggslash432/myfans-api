@@ -18,15 +18,14 @@ export class InvoicePaymentSucceededHandler {
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
   ) {}
 
-  // ✅ Subscription未作成でもフォールバックしてPayment/Access付与まで通す
   async handle(invoice: Stripe.Invoice) {
     const inv = invoice as any;
     const subscriptionId = inv.subscription as string | null;
     if (!subscriptionId) return;
 
-    let shopIdResolved: string | null =
-      (invoice.metadata?.shopId as string | undefined) ?? null;
-
+    // -------------------------
+    // chargeId 解決（Stripe送金用）
+    // -------------------------
     let chargeId: string | null = null;
     const invoicePiId =
       typeof inv.payment_intent === 'string'
@@ -36,10 +35,8 @@ export class InvoicePaymentSucceededHandler {
     if (invoicePiId) {
       try {
         const pi = await this.stripe.paymentIntents.retrieve(invoicePiId);
-        chargeId = typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
-
-        shopIdResolved =
-          shopIdResolved ?? ((pi.metadata?.shopId as string | undefined) ?? null);
+        chargeId =
+          typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
       } catch (e: any) {
         this.logger.warn(
           `invoice.payment_succeeded: failed to retrieve PI. pi=${invoicePiId}`,
@@ -48,34 +45,33 @@ export class InvoicePaymentSucceededHandler {
       }
     }
 
+    // -------------------------
+    // Subscription 取得（DB優先）
+    // -------------------------
     let dbSub = await this.prisma.subscription.findUnique({
       where: { stripeSubscriptionId: String(subscriptionId) },
       select: { userId: true, creatorId: true, planId: true },
     });
 
-    let stripeSub: Stripe.Subscription | null = null;
-
+    // -------------------------
+    // DBに無ければ Stripe から復元
+    // -------------------------
     if (!dbSub) {
       this.logger.warn(
         `invoice.payment_succeeded: Subscription not found in DB. Fetching from Stripe... subId=${subscriptionId}`,
       );
 
-      stripeSub = await this.stripe.subscriptions.retrieve(String(subscriptionId));
+      const stripeSub = await this.stripe.subscriptions.retrieve(
+        String(subscriptionId),
+      );
 
-      shopIdResolved =
-        shopIdResolved ??
-        ((stripeSub.metadata?.shopId as string | undefined) ?? null);
+      const userId = stripeSub.metadata?.userId as string | undefined;
+      const planId = stripeSub.metadata?.planId as string | undefined;
 
-      const userId = (stripeSub.metadata?.userId ?? undefined) as
-        | string
-        | undefined;
-      const planId = (stripeSub.metadata?.planId ?? undefined) as
-        | string
-        | undefined;
+      let creatorId =
+        (stripeSub.metadata?.creatorId as string | undefined) ?? undefined;
 
-      let creatorId: string | undefined =
-        (stripeSub.metadata?.creatorId ?? undefined) as string | undefined;
-
+      // plan から creatorId 復元（正）
       if (!creatorId && planId) {
         const plan = await this.prisma.plan.findUnique({
           where: { id: planId },
@@ -86,7 +82,7 @@ export class InvoicePaymentSucceededHandler {
 
       if (!userId || !planId || !creatorId) {
         this.logger.error(
-          `invoice.payment_succeeded: cannot recover metadata. subId=${subscriptionId} userId=${userId} planId=${planId} creatorId=${creatorId}`,
+          `invoice.payment_succeeded: cannot recover subscription metadata. subId=${subscriptionId}`,
         );
         return;
       }
@@ -100,14 +96,12 @@ export class InvoicePaymentSucceededHandler {
         unpaid: SubStatus.past_due,
         incomplete_expired: SubStatus.canceled,
       };
-      const subStatus: SubStatus = statusMap[stripeSub.status] ?? SubStatus.incomplete;
 
       const anySub = stripeSub as any;
-      const periodStartSec: number = anySub.current_period_start ?? 0;
-      const periodEndSec: number = anySub.current_period_end ?? 0;
-
-      const periodStart = new Date(periodStartSec * 1000);
-      const periodEnd = new Date(periodEndSec * 1000);
+      const periodStart = new Date(
+        (anySub.current_period_start ?? 0) * 1000,
+      );
+      const periodEnd = new Date((anySub.current_period_end ?? 0) * 1000);
 
       await this.prisma.subscription.upsert({
         where: { stripeSubscriptionId: stripeSub.id },
@@ -115,7 +109,7 @@ export class InvoicePaymentSucceededHandler {
           userId,
           creatorId,
           planId,
-          status: subStatus,
+          status: statusMap[stripeSub.status] ?? SubStatus.incomplete,
           currentPeriodStart: periodStart,
           currentPeriodEnd: periodEnd,
           cancelAtPeriodEnd: stripeSub.cancel_at_period_end ?? false,
@@ -125,7 +119,7 @@ export class InvoicePaymentSucceededHandler {
           creatorId,
           planId,
           stripeSubscriptionId: stripeSub.id,
-          status: subStatus,
+          status: statusMap[stripeSub.status] ?? SubStatus.incomplete,
           currentPeriodStart: periodStart,
           currentPeriodEnd: periodEnd,
           cancelAtPeriodEnd: stripeSub.cancel_at_period_end ?? false,
@@ -136,30 +130,13 @@ export class InvoicePaymentSucceededHandler {
         where: { stripeSubscriptionId: String(subscriptionId) },
         select: { userId: true, creatorId: true, planId: true },
       });
+
       if (!dbSub) return;
-    } else {
-      if (!shopIdResolved) {
-        try {
-          stripeSub = await this.stripe.subscriptions.retrieve(String(subscriptionId));
-          shopIdResolved = (stripeSub.metadata?.shopId as string | undefined) ?? null;
-        } catch (e: any) {
-          this.logger.warn(
-            `invoice.payment_succeeded: failed to retrieve subscription for shopId. sub=${subscriptionId}`,
-            e?.message || e,
-          );
-        }
-      }
     }
 
-    if (!shopIdResolved) {
-      // creator.shopId にフォールバック（creatorId は「creatorのuserId」運用前提）
-      const c = await this.prisma.creator.findUnique({
-        where: { userId: dbSub.creatorId },
-        select: { shopId: true },
-      });
-      shopIdResolved = (c?.shopId as any) ?? null;
-    }
-
+    // -------------------------
+    // 金額確定
+    // -------------------------
     const amountJpy =
       typeof invoice.amount_paid === 'number' && invoice.amount_paid > 0
         ? invoice.amount_paid
@@ -174,10 +151,12 @@ export class InvoicePaymentSucceededHandler {
       return;
     }
 
-    // ✅ 先に Payment を作る（Transfer.paymentId 必須のため）
+    // -------------------------
+    // Payment 作成（ここで shopId が確定する）
+    // -------------------------
     const payment = await this.paymentsWriter.createPaymentWithShareIdempotent({
       userId: dbSub.userId,
-      creatorId: dbSub.creatorId,
+      creatorId: dbSub.creatorId, // ← 必ず creator.userId
       planId: dbSub.planId,
       postId: null,
       amountJpy,
@@ -190,19 +169,23 @@ export class InvoicePaymentSucceededHandler {
         `invoice.payment_succeeded: payment is null. invoiceId=${invoice.id}`,
       );
       return;
-    }    
+    }
 
-    // ✅ その後に Transfer（Stripe送金 + DB Transfer）
+    // -------------------------
+    // Transfer（shopId は payment.shopId を正とする）
+    // -------------------------
     await this.splitTransfers.createSplitTransfers({
       paymentId: payment.id,
       externalTxId: invoice.id,
       amountJpy,
       creatorId: dbSub.creatorId,
-      shopId: payment.shopId, // ← ★ここに変更
+      shopId: payment.shopId, // ← ★唯一の正解ルート
       chargeId,
     });
 
-    // plan投稿アクセス付与
+    // -------------------------
+    // アクセス付与
+    // -------------------------
     const posts = await this.prisma.post.findMany({
       where: {
         creatorId: dbSub.creatorId,

@@ -14,40 +14,20 @@ export class PaymentsWriterService {
     private readonly share: PaymentShareService,
   ) {}
 
-  /**
-   * creatorId が
-   * - creator.userId
-   * - creator.id
-   * のどちらで来ても shopId を解決する
-   */
-  private async resolveShopId(creatorId: string): Promise<string | null> {
-    // ① creator.userId として探す
-    let creator = await this.prisma.creator.findUnique({
-      where: { userId: creatorId },
+  private async resolveShopId(creatorUserId: string): Promise<string | null> {
+    const creator = await this.prisma.creator.findUnique({
+      where: { userId: creatorUserId },
       select: { shopId: true },
     });
 
-    if (creator?.shopId) {
-      return creator.shopId;
-    }
+    if (creator?.shopId) return creator.shopId;
 
-    // ② creator.id（PK）として探す（フォールバック）
-    creator = await this.prisma.creator.findUnique({
-      where: { userId: creatorId },
-      select: { shopId: true },
-    });
-
-    if (creator?.shopId) {
-      return creator.shopId;
-    }
-
-    // ③ 見つからなかった場合はログ
     this.logger.warn(
-      `resolveShopId: shopId not found. creatorId=${creatorId}`,
+      `resolveShopId: shopId not found. creatorUserId=${creatorUserId}`,
     );
-
     return null;
   }
+
 
   async createPaymentWithShareIdempotent(
     args: CreatePaymentWithShareArgs,
