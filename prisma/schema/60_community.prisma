@@ -9,7 +9,7 @@ model Report {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   reason    String?
-  status    String @default("pending")
+  status    ReportStatus @default(pending)
   createdAt DateTime @default(now())
 }
 

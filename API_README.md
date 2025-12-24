@@ -58,12 +58,11 @@ npx prisma migrate dev    # ← migration 作成 + DB 反映
 
 npm run prisma:generate   # ← Prisma Client 再生成
 
+「スキーマのenumsをfrontにprisma-enums.tsとして出力」
+npx ts-node scripts/export-enums.ts
 
 「データベース管理」
 npm run prisma:studio
-
-「スキーマのenumsをfrontにprisma-enums.tsとして出力」
-npx ts-node scripts/export-enums.ts
 
 ⚪︎ストライプのログを見る
 stripe listen --forward-to localhost:3000/api/stripe/webhook

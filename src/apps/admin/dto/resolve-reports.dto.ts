@@ -1,8 +1,9 @@
 // api/src/apps/admin/dto/resolve-reports.dto.ts
 
-import { IsIn } from 'class-validator';
+import { IsEnum } from 'class-validator';
+import { ReportStatus } from '@prisma/client';
 
 export class ResolveReportDto {
-  @IsIn(['reviewed', 'dismissed'])
-  action!: 'reviewed' | 'dismissed';
+  @IsEnum(ReportStatus)
+  action!: ReportStatus;
 }

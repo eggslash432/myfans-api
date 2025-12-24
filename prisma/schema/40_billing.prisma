@@ -1,0 +1,54 @@
+//api/prisma/schema/40_billing.prisma
+
+model Plan {
+  id        String @id @default(uuid())
+  creatorId String
+  creator   Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+
+  name            String
+  description     String?
+  priceJpy        Int
+  billingInterval BillingInterval @default(month)
+  isActive        Boolean         @default(true)
+  sortOrder       Int             @default(0)
+
+  externalPriceId String?
+
+  creatorSharePercent  Int @default(80)
+  platformSharePercent Int @default(20)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+  posts         Post[]
+  payments      Payment[]
+
+  @@index([creatorId])
+  @@index([isActive, creatorId])
+}
+
+model Subscription {
+  id        String @id @default(uuid())
+  userId    String
+  creatorId String
+  planId    String
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator Creator @relation(fields: [creatorId], references: [userId], onDelete: Cascade)
+  plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  stripeSubscriptionId String @unique
+  status               SubStatus
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, creatorId, planId])
+  @@index([status])
+  @@index([currentPeriodEnd])
+}
+

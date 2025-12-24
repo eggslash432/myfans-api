@@ -20,7 +20,6 @@ model Transfer {
   @@index([kind, shopId])
 }
 
-
 model Payout {
   id String @id @default(uuid())
 
@@ -39,12 +38,31 @@ model Payout {
   payoutStatus  PayoutStatus
   note          String?
 
-  requestedAt DateTime @default(now())
-  paidAt      DateTime?
+  requestedAt   DateTime @default(now())
+  paidAt        DateTime?
+
+  items         PayoutItem[]
 
   @@index([targetType, payoutStatus])
   @@index([creatorId, payoutStatus])
   @@index([shopId, payoutStatus])
+}
+
+model PayoutItem {
+  id        String @id @default(uuid())
+  payoutId  String
+  paymentId String
+
+  payout  Payout  @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  // どの取り分をこの申請に含めたか（CREATOR/SHOP で計算が違うのでスナップ推奨）
+  amountJpy Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([payoutId, paymentId])
+  @@index([paymentId])
 }
 
 model FeeSetting {

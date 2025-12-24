@@ -193,14 +193,15 @@ model Profile {
 //api/prisma/schema/30_creator_kyc.prisma
 
 model Creator {
-  userId String @id
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String   @unique @default(uuid())
+  userId         String   @id
+  shopId         String?
 
-  shopId String?
-  shop   Shop?  @relation(fields: [shopId], references: [id])
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shop           Shop?    @relation(fields: [shopId], references: [id])
 
-  publicName String
-  role CreatorRole @default(normal)
+  publicName     String
+  role           CreatorRole @default(normal)
 
   approvalStatus CreatorApprovalStatus @default(pending)
   approvedAt     DateTime?
@@ -316,8 +317,8 @@ model ShopInvite {
   shop      Shop     @relation("ShopInvites", fields: [shopId], references: [id], onDelete: Cascade)
 }
 
-// ===== 40_plan_subscription.prisma =====
-//api/prisma/schema/40_plan_subscription.prisma
+// ===== 40_billing.prisma =====
+//api/prisma/schema/40_billing.prisma
 
 model Plan {
   id        String @id @default(uuid())
@@ -371,6 +372,9 @@ model Subscription {
   @@index([currentPeriodEnd])
 }
 
+// ===== 45_payments.prisma =====
+// api/prisma/schema/45_payments.prisma
+
 model Payment {
   id        String @id @default(uuid())
   userId    String?
@@ -406,34 +410,14 @@ model Payment {
   creatorAmountJpy  Int?
   shopAmountJpy     Int?
   platformAmountJpy Int?
+  stripeFeeJpy      Int?
 
-  transfers Transfer[]
+  transfers         Transfer[]
+  payoutItems       PayoutItem[]
 
-  @@index([paymentStatus, createdAt])
-  @@index([creatorId])
-  @@index([planId])
-  @@index([postId])
-  @@index([shopId])
-}
-
-
-model WebhookLog {
-  id String @id @default(uuid())
-
-  // 対象イベント
-  eventId String
-  event   WebhookEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  // 処理内容
-  action  String   // payment_create / transfer_create / payout_update など
-  success Boolean
-
-  message String?
-
-  // 記録時刻
-  createdAt DateTime @default(now())
-
-  @@index([eventId, createdAt])
+  @@index([paymentStatus, paidAt])
+  @@index([creatorId, paymentStatus, paidAt])
+  @@index([shopId, paymentStatus, paidAt])
 }
 
 model WebhookEvent {
@@ -462,7 +446,26 @@ model WebhookEvent {
   @@index([provider, eventType, createdAt])
 }
 
-// ===== 50_post_media_access.prisma =====
+model WebhookLog {
+  id String @id @default(uuid())
+
+  // 対象イベント
+  eventId String
+  event   WebhookEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // 処理内容
+  action  String   // payment_create / transfer_create / payout_update など
+  success Boolean
+
+  message String?
+
+  // 記録時刻
+  createdAt DateTime @default(now())
+
+  @@index([eventId, createdAt])
+}
+
+// ===== 50_content.prisma =====
 //api/prisma/schema/50_post_media_access.prisma
 
 model Post {
@@ -511,13 +514,6 @@ model PostMedia {
   @@index([postId, isSample])
 }
 
-model UploadSetting {
-  id            Int @id @default(1)
-  maxFileSizeMb Int @default(200)
-  maxFiles      Int @default(10)
-  updatedAt     DateTime @updatedAt
-}
-
 model PostAccess {
   id     String @id @default(cuid())
   userId String
@@ -529,6 +525,13 @@ model PostAccess {
   expiresAt DateTime?
 
   @@unique([userId, postId])
+}
+
+model UploadSetting {
+  id            Int @id @default(1)
+  maxFileSizeMb Int @default(200)
+  maxFiles      Int @default(10)
+  updatedAt     DateTime @updatedAt
 }
 
 // ===== 60_community.prisma =====
@@ -543,7 +546,7 @@ model Report {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   reason    String?
-  status    String @default("pending")
+  status    ReportStatus @default(pending)
   createdAt DateTime @default(now())
 }
 
@@ -598,7 +601,6 @@ model Transfer {
   @@index([kind, shopId])
 }
 
-
 model Payout {
   id String @id @default(uuid())
 
@@ -617,12 +619,31 @@ model Payout {
   payoutStatus  PayoutStatus
   note          String?
 
-  requestedAt DateTime @default(now())
-  paidAt      DateTime?
+  requestedAt   DateTime @default(now())
+  paidAt        DateTime?
+
+  items         PayoutItem[]
 
   @@index([targetType, payoutStatus])
   @@index([creatorId, payoutStatus])
   @@index([shopId, payoutStatus])
+}
+
+model PayoutItem {
+  id        String @id @default(uuid())
+  payoutId  String
+  paymentId String
+
+  payout  Payout  @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  // どの取り分をこの申請に含めたか（CREATOR/SHOP で計算が違うのでスナップ推奨）
+  amountJpy Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([payoutId, paymentId])
+  @@index([paymentId])
 }
 
 model FeeSetting {

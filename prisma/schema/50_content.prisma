@@ -46,13 +46,6 @@ model PostMedia {
   @@index([postId, isSample])
 }
 
-model UploadSetting {
-  id            Int @id @default(1)
-  maxFileSizeMb Int @default(200)
-  maxFiles      Int @default(10)
-  updatedAt     DateTime @updatedAt
-}
-
 model PostAccess {
   id     String @id @default(cuid())
   userId String
@@ -64,4 +57,11 @@ model PostAccess {
   expiresAt DateTime?
 
   @@unique([userId, postId])
+}
+
+model UploadSetting {
+  id            Int @id @default(1)
+  maxFileSizeMb Int @default(200)
+  maxFiles      Int @default(10)
+  updatedAt     DateTime @updatedAt
 }
