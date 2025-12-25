@@ -11,7 +11,7 @@ import type { Request } from 'express';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { TransferKind, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { ShopAuthService } from './shop-auth.service';
 import { SalesSummaryRes } from 'src/shared/types';
 import { startOfMonthLocal, startOfTodayLocal } from './shop-utils';
@@ -39,61 +39,48 @@ export class ShopSalesController {
       throw new BadRequestException('range は today|month|all のいずれかです');
     }
 
-    // ✅ range条件（createdAt）
-    const createdAtFilter =
+    // ✅ 売上は paidAt 基準
+    const paidAtFilter =
       r === 'today'
         ? { gte: startOfTodayLocal() }
         : r === 'month'
           ? { gte: startOfMonthLocal() }
           : undefined;
 
-    const whereShopTransfer: Prisma.TransferWhereInput = {
-      kind: TransferKind.shop,
+    const where: Prisma.PaymentWhereInput = {
       shopId,
-      ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
+      paymentStatus: 'paid',
+      ...(paidAtFilter ? { paidAt: paidAtFilter } : {}),
     };
 
-    const [shopAgg, transactions, paymentIdRows] = await Promise.all([
-      this.prisma.transfer.aggregate({
-        where: whereShopTransfer,
-        _sum: { amountJpy: true },
+    const [agg, transactions] = await Promise.all([
+      this.prisma.payment.aggregate({
+        where,
+        _sum: {
+          amountJpy: true,      // gross
+          shopAmountJpy: true,  // shop取り分（Stripe差引前）
+          stripeFeeJpy: true,   // Stripe実費（後確定）
+        },
       }),
-      this.prisma.transfer.count({ where: whereShopTransfer }),
-      // ✅ findMany + distinct でDB側でユニーク化（重さ回避）
-      this.prisma.transfer.findMany({
-        where: whereShopTransfer,
-        distinct: ['paymentId'],
-        select: { paymentId: true },
-      }),
+      this.prisma.payment.count({ where }),
     ]);
 
-    const gross = Number(shopAgg._sum.amountJpy ?? 0);
+    const gross = Number(agg._sum.amountJpy ?? 0);
 
-    const uniqPaymentIds = paymentIdRows
-      .map((x) => x.paymentId)
-      .filter((v): v is string => !!v);
+    const shopSum = Number(agg._sum.shopAmountJpy ?? 0);
+    const stripeFeeSum = Number(agg._sum.stripeFeeJpy ?? 0);
 
-    let platformFee = 0;
-    if (uniqPaymentIds.length > 0) {
-      const platformWhere: Prisma.TransferWhereInput = {
-        kind: TransferKind.platform,
-        paymentId: { in: uniqPaymentIds },
-        // ✅ range整合（ブレ防止）
-        ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
-      };
+    // ✅ 案B：実入金（入金対象）
+    const net = Math.max(shopSum - stripeFeeSum, 0);
 
-      const platformAgg = await this.prisma.transfer.aggregate({
-        where: platformWhere,
-        _sum: { amountJpy: true },
-      });
-      platformFee = Number(platformAgg._sum.amountJpy ?? 0);
-    }
+    // ✅ 表示上の「控除額（手数料）」＝ 総額 − 実入金
+    const platformFee = Math.max(0, gross - net);
 
     return {
       range: r,
       gross,
       platformFee,
-      net: gross, // 今は shop取り分=net ならこのまま。将来差引くならここで反映
+      net,
       transactions,
     };
   }

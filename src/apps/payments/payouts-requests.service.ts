@@ -3,6 +3,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PayoutsBalanceService } from './payouts-balance.service';
+import { PayoutStatus, PayoutTargetType } from '@prisma/client';
 
 @Injectable()
 export class PayoutsRequestsService {
@@ -11,62 +12,85 @@ export class PayoutsRequestsService {
     private readonly balance: PayoutsBalanceService,
   ) {}
 
-  async requestCreatorPayout(creatorId: string, amountJpy: number, note?: string) {
-    if (!Number.isFinite(amountJpy) || amountJpy <= 0) {
+  /**
+   * クリエイター出金申請
+   * ✅ フェーズ1前提：creatorUserId = User.id（= Creator.userId）
+   */
+  async requestCreatorPayout(
+    creatorUserId: string,
+    amountJpy: number,
+    note?: string,
+  ) {
+    const amount = Math.floor(Number(amountJpy));
+    if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('金額が不正です');
     }
 
-    const available = await this.balance.getCreatorBalanceJpy(creatorId);
-    if (amountJpy > available) {
-      throw new BadRequestException(`出金可能額を超えています（出金可能: ${available} 円）`);
+    const available = await this.balance.getCreatorBalanceJpy(creatorUserId);
+    if (amount > available) {
+      throw new BadRequestException(
+        `出金可能額を超えています（出金可能: ${available} 円）`,
+      );
     }
 
     const payout = await this.prisma.payout.create({
       data: {
-        targetType: 'CREATOR',
-        creatorId,
-        amountJpy: Math.floor(amountJpy),
-        payoutStatus: 'requested',
+        targetType: PayoutTargetType.CREATOR,
+        creatorId: creatorUserId,
+        amountJpy: amount,
+        payoutStatus: PayoutStatus.requested,
         note,
       },
     });
 
-    return { payout, availableAfter: available - amountJpy };
+    return { payout, availableAfter: Math.max(available - amount, 0) };
   }
 
-  async listCreatorPayouts(creatorId: string) {
+  /**
+   * 自分の出金履歴（クリエイター）
+   */
+  async listCreatorPayouts(creatorUserId: string) {
     return this.prisma.payout.findMany({
-      where: { targetType: 'CREATOR', creatorId },
+      where: { targetType: PayoutTargetType.CREATOR, creatorId: creatorUserId },
       orderBy: { requestedAt: 'desc' },
     });
   }
 
+  /**
+   * ショップ出金申請
+   */
   async requestShopPayout(shopId: string, amountJpy: number, note?: string) {
-    if (!Number.isFinite(amountJpy) || amountJpy <= 0) {
+    const amount = Math.floor(Number(amountJpy));
+    if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('金額が不正です');
     }
 
     const available = await this.balance.getShopBalanceJpy(shopId);
-    if (amountJpy > available) {
-      throw new BadRequestException(`出金可能額を超えています（出金可能: ${available} 円）`);
+    if (amount > available) {
+      throw new BadRequestException(
+        `出金可能額を超えています（出金可能: ${available} 円）`,
+      );
     }
 
     const payout = await this.prisma.payout.create({
       data: {
-        targetType: 'SHOP',
+        targetType: PayoutTargetType.SHOP,
         shopId,
-        amountJpy: Math.floor(amountJpy),
-        payoutStatus: 'requested',
+        amountJpy: amount,
+        payoutStatus: PayoutStatus.requested,
         note,
       },
     });
 
-    return { payout, availableAfter: available - amountJpy };
+    return { payout, availableAfter: Math.max(available - amount, 0) };
   }
 
+  /**
+   * ショップの出金履歴
+   */
   async listShopPayouts(shopId: string) {
     return this.prisma.payout.findMany({
-      where: { targetType: 'SHOP', shopId },
+      where: { targetType: PayoutTargetType.SHOP, shopId },
       orderBy: { requestedAt: 'desc' },
     });
   }

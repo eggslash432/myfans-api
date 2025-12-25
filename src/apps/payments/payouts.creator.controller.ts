@@ -12,7 +12,6 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreatorOnlyGuard } from '../access-control/creator-only.guard';
 import { PrismaService } from '../prisma/prisma.service';
-import { PayoutsAdminService } from './payouts-admin.service';
 import { PayoutsBalanceService } from './payouts-balance.service';
 import { PayoutsRequestsService } from './payouts-requests.service';
 
@@ -21,16 +20,19 @@ import { PayoutsRequestsService } from './payouts-requests.service';
 export class CreatorPayoutsController {
   constructor(
     private readonly payoutsRequestsService: PayoutsRequestsService,
-    private readonly payoutsBalanceService :PayoutsBalanceService,
+    private readonly payoutsBalanceService: PayoutsBalanceService,
     private readonly prisma: PrismaService,
   ) {}
 
   /**
    * 共通：KYCチェック
+   *
+   * ✅ フェーズ1の前提：
+   * - creator の識別子は「Creator.id」ではなく「creator.userId (= User.id)」
    */
-  private async assertCreatorCanPayout(creatorId: string) {
+  private async assertCreatorCanPayout(creatorUserId: string) {
     const creator = await this.prisma.creator.findUnique({
-      where: { userId: creatorId },
+      where: { userId: creatorUserId },
       select: {
         stripeKycStatus: true,
         stripePayoutsEnabled: true,
@@ -53,10 +55,13 @@ export class CreatorPayoutsController {
    */
   @Get('balance')
   async getBalance(@Req() req: any) {
-    const creatorId = req.user.id as string;
-    await this.assertCreatorCanPayout(creatorId);
+    const creatorUserId = req.user.id as string;
 
-    const balance = await this.payoutsBalanceService.getCreatorBalanceJpy(creatorId);
+    await this.assertCreatorCanPayout(creatorUserId);
+
+    const balance = await this.payoutsBalanceService.getCreatorBalanceJpy(
+      creatorUserId,
+    );
     return { balanceJpy: balance };
   }
 
@@ -65,10 +70,11 @@ export class CreatorPayoutsController {
    */
   @Get()
   async listMine(@Req() req: any) {
-    const creatorId = req.user.id as string;
-    await this.assertCreatorCanPayout(creatorId);
+    const creatorUserId = req.user.id as string;
 
-    return this.payoutsRequestsService.listCreatorPayouts(creatorId);
+    await this.assertCreatorCanPayout(creatorUserId);
+
+    return this.payoutsRequestsService.listCreatorPayouts(creatorUserId);
   }
 
   /**
@@ -79,8 +85,9 @@ export class CreatorPayoutsController {
     @Req() req: any,
     @Body() body: { amountJpy: number; note?: string },
   ) {
-    const creatorId = req.user.id as string;
-    await this.assertCreatorCanPayout(creatorId);
+    const creatorUserId = req.user.id as string;
+
+    await this.assertCreatorCanPayout(creatorUserId);
 
     const amount = Number(body.amountJpy);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -88,7 +95,7 @@ export class CreatorPayoutsController {
     }
 
     return this.payoutsRequestsService.requestCreatorPayout(
-      creatorId,
+      creatorUserId,
       amount,
       body.note,
     );

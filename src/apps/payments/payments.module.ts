@@ -24,6 +24,8 @@ import { PaymentShareService } from './share/payment-share.service';
 import { StripeCheckoutService } from './stripe/stripe-checkout.service';
 import { PaymentsWriterService } from './writer/payments-writer.service';
 import { PayoutsModule } from './payouts.module';
+import { TransferLedgerService } from './stripe-webhook/transfer-ledger.service';
+import { StripeTransferService } from './stripe-webhook/stripe-transfer.service';
 
 
 @Module({
@@ -54,6 +56,9 @@ import { PayoutsModule } from './payouts.module';
     PaymentShareService,
     StripeCheckoutService,
     PaymentsWriterService,   
+    SplitTransferService,
+    TransferLedgerService,
+    StripeTransferService,    
   ],
   exports:[
     PaymentsService, 

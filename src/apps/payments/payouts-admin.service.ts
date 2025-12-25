@@ -6,16 +6,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  PayoutStatus,
-  PayoutTargetType,
-  Prisma,
-} from '@prisma/client';
+import { PayoutStatus, PayoutTargetType, Prisma } from '@prisma/client';
 import Stripe from 'stripe';
 import { AdminPayoutsQueryDto } from './dto/admin-payouts.query';
 
 function formatDate(d: Date) {
-  // "YYYY-MM-DD HH:mm" っぽい見やすい形（UTCで出るので運用に合わせて要調整）
   return d.toISOString().replace('T', ' ').slice(0, 16);
 }
 
@@ -27,9 +22,6 @@ function toCsv(rows: (string | number)[][]): string {
 
 function parseMonthRange(month?: string): { from?: Date; to?: Date } {
   if (!month) return {};
-  // month: "2025-12" 想定
-  // サーバTZ次第でズレやすいので、明示的に UTC で作る（少なくとも境界事故を減らす）
-  // ※管理画面要件が「JST月次」なら、JST変換ユーティリティに寄せるのが理想
   const m = month.trim();
   if (!/^\d{4}-\d{2}$/.test(m)) {
     throw new BadRequestException('month は YYYY-MM 形式で指定してください');
@@ -48,9 +40,6 @@ export class PayoutsAdminService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * 管理者：出金一覧（filter/sort/paging）
-   */
   async adminListPayouts(q: AdminPayoutsQueryDto) {
     const page = q.page ?? 1;
     const pageSize = Math.min(q.pageSize ?? 50, 200);
@@ -75,10 +64,9 @@ export class PayoutsAdminService {
     const sortBy = q.sortBy ?? 'requestedAt';
     const sortDir = q.sortDir ?? 'desc';
 
-    // sortBy は DTO で許可リスト化してる前提
     const orderBy: Prisma.PayoutOrderByWithRelationInput[] = [
       { [sortBy]: sortDir } as any,
-      { id: 'desc' }, // 安定ソート
+      { id: 'desc' },
     ];
 
     const [total, items] = await this.prisma.$transaction([
@@ -89,7 +77,9 @@ export class PayoutsAdminService {
         skip,
         take,
         include: {
-          creator: { select: { userId: true, publicName: true, stripeAccountId: true } },
+          creator: {
+            select: { userId: true, publicName: true, stripeAccountId: true },
+          },
           shop: { select: { id: true, name: true, stripeAccountId: true } },
         },
       }),
@@ -99,11 +89,16 @@ export class PayoutsAdminService {
   }
 
   /**
-   * 管理者：承認（= Stripe Transfer 実行して paid にする）
-   * ※現状は "requested → paid" のワンステップ
-   *   もし "approved" を挟みたいなら、ここでまず approved にしてから別ジョブにする。
+   * 管理者：承認（案A）
+   * ✅ requested → approved（DBで先に状態確定して競合を潰す）
+   * ✅ Stripe transfer を投げる
+   * ✅ paid は transfer.created(webhook) で確定
+   *
+   * 失敗時：
+   * - approved を requested に戻す（ロールバック代替）
    */
   async adminApprove(payoutId: string) {
+    // まず対象を取得（Stripe送金先の確認用）
     const payout = await this.prisma.payout.findUnique({
       where: { id: payoutId },
       include: { creator: true, shop: true },
@@ -122,37 +117,70 @@ export class PayoutsAdminService {
         );
       }
 
-      // Stripe Transfer
-      const transfer = await this.stripe.transfers.create({
-        amount: payout.amountJpy * 100,
-        currency: 'jpy',
-        destination: creator.stripeAccountId,
-        description: `Creator payout ${payout.id}`,
+      // ✅ 1) 先に approved に更新（requested のまま Stripe を叩くと二重実行の余地が出る）
+      // 条件付きupdateで「今requestedのときだけ」更新する（楽観ロック）
+      const updated = await this.prisma.payout.updateMany({
+        where: { id: payout.id, payoutStatus: PayoutStatus.requested },
+        data: { payoutStatus: PayoutStatus.approved },
       });
 
-      return this.prisma.payout.update({
-        where: { id: payout.id },
-        data: {
-          payoutStatus: PayoutStatus.paid,
-          paidAt: new Date(),
-          note: `transferId=${transfer.id}`,
-        },
-      });
+      if (updated.count !== 1) {
+        // 競合や二重クリック等で status が変わった
+        throw new BadRequestException('この出金は既に処理中、または状態が変更されています');
+      }
+
+      // ✅ 2) Stripe transfer
+      try {
+        const transfer = await this.stripe.transfers.create(
+          {
+            amount: payout.amountJpy, // ✅ JPYは円単位
+            currency: 'jpy',
+            destination: creator.stripeAccountId,
+            description: `Payout ${payout.id}`, // webhook fallback 用の保険
+            metadata: {
+              payoutId: payout.id,
+              targetType: 'CREATOR',
+              creatorUserId: creator.userId,
+            },
+          },
+          { idempotencyKey: `payout_${payout.id}` },
+        );
+
+        // ✅ 3) transferId を控える（既存noteがあっても追記）
+        const nextNote = payout.note
+          ? payout.note.includes(`transferId=${transfer.id}`)
+            ? payout.note
+            : `${payout.note}\ntransferId=${transfer.id}`
+          : `transferId=${transfer.id}`;
+
+        return await this.prisma.payout.update({
+          where: { id: payout.id },
+          data: { note: nextNote },
+        });
+      } catch (e: any) {
+        // ✅ Stripe失敗 → approved を requested に戻す（運用事故を減らす）
+        await this.prisma.payout.updateMany({
+          where: { id: payout.id, payoutStatus: PayoutStatus.approved },
+          data: { payoutStatus: PayoutStatus.requested },
+        });
+
+        throw new BadRequestException(
+          `Stripe transfer failed: ${e?.message ?? String(e)}`,
+        );
+      }
     }
 
     if (payout.targetType === PayoutTargetType.SHOP) {
-      // 将来：shop.stripeAccountId に transfer する、など
       throw new BadRequestException('SHOP 出金は未実装です');
     }
 
     throw new BadRequestException('Invalid payout target');
   }
 
-  /**
-   * 管理者：却下
-   */
   async adminReject(payoutId: string, note?: string) {
-    const payout = await this.prisma.payout.findUnique({ where: { id: payoutId } });
+    const payout = await this.prisma.payout.findUnique({
+      where: { id: payoutId },
+    });
     if (!payout) throw new NotFoundException('payout not found');
 
     if (payout.payoutStatus !== PayoutStatus.requested) {
@@ -165,13 +193,10 @@ export class PayoutsAdminService {
     });
   }
 
-  /**
-   * 管理者：手動 paid マーク（approved → paid）
-   * ※今の adminApprove() は requested→paid 直行なので、
-   *   ここを使うケースは「別経路で approved にした」場合のみ。
-   */
   async adminMarkPaid(payoutId: string, note?: string) {
-    const payout = await this.prisma.payout.findUnique({ where: { id: payoutId } });
+    const payout = await this.prisma.payout.findUnique({
+      where: { id: payoutId },
+    });
     if (!payout) throw new NotFoundException('payout not found');
 
     if (payout.payoutStatus !== PayoutStatus.approved) {
@@ -184,10 +209,6 @@ export class PayoutsAdminService {
     });
   }
 
-  /**
-   * 管理者：CSV出力
-   * month: "YYYY-MM" のとき requestedAt をその月で絞る
-   */
   async exportPayoutCsv(month?: string): Promise<string> {
     const { from, to } = parseMonthRange(month);
 

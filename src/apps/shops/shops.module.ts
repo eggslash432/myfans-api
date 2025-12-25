@@ -16,6 +16,7 @@ import { ShopPayoutController } from './shop-payout.controller';
 import { ShopPayoutService } from './shop-payout.service';
 import { PaymentsModule } from '../payments/payments.module';
 import { PayoutsModule } from '../payments/payouts.module';
+import { ShopOwnerOrAdminGuard } from '../access-control/shop-owner-or-admin.guard';
 
 @Module({
   imports:[
@@ -38,6 +39,7 @@ import { PayoutsModule } from '../payments/payouts.module';
     PrismaService,
     ShopAuthService,
     ShopPayoutService,
+    ShopOwnerOrAdminGuard,
   ],
   exports: [
     PrismaService,

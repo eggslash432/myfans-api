@@ -4,16 +4,26 @@ import Stripe from 'stripe';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SplitTransferService } from './split-transfer.service';
 import { PaymentsWriterService } from '../writer/payments-writer.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class PaymentIntentSucceededHandler {
   private readonly logger = new Logger(PaymentIntentSucceededHandler.name);
+  private readonly stripe: Stripe;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentsWriter: PaymentsWriterService,
     private readonly splitTransfers: SplitTransferService,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    const secret =
+      this.config.get<string>('STRIPE_SECRET_KEY') ?? process.env.STRIPE_SECRET_KEY;
+    if (!secret) {
+      throw new Error('STRIPE_SECRET_KEY is not set');
+    }
+    this.stripe = new Stripe(secret, {});
+  }
 
   async handle(pi: Stripe.PaymentIntent) {
     const m = pi.metadata || {};
@@ -68,6 +78,11 @@ export class PaymentIntentSucceededHandler {
 
     if (!payment) return;
 
+    // ✅ stripeFeeJpy を保存（冪等）
+    // - chargeId が取れないケースもあるので、その場合はスキップ
+    // - 既に stripeFeeJpy が入っていればスキップ
+    await this.tryUpdateStripeFeeJpy(payment.id, payment.stripeFeeJpy ?? null, pi, chargeId);
+
     // ✅ shopId は payment.shopId を正とする（metadataは補助）
     const shopIdResolved =
       payment.shopId ??
@@ -78,7 +93,7 @@ export class PaymentIntentSucceededHandler {
       paymentId: payment.id,
       externalTxId: pi.id,
       amountJpy,
-      creatorId: resolvedCreatorId,
+      creatorUserId: resolvedCreatorId,
       shopId: shopIdResolved,
       chargeId,
     });
@@ -107,5 +122,62 @@ export class PaymentIntentSucceededHandler {
     this.logger.log(
       `PPV unlocked: user=${userId}, post=${postId}, pi=${pi.id}`,
     );
+  }
+
+  private async tryUpdateStripeFeeJpy(
+    paymentId: string,
+    currentStripeFeeJpy: number | null,
+    pi: Stripe.PaymentIntent,
+    chargeId: string | null,
+  ) {
+    try {
+      // 既に入ってるなら冪等的にスキップ
+      if (typeof currentStripeFeeJpy === 'number' && currentStripeFeeJpy > 0) {
+        return;
+      }
+
+      // latest_charge が無い場合は取れない（0円/特殊ケース等）
+      if (!chargeId) {
+        this.logger.warn(`stripe fee skipped: no chargeId. pi.id=${pi.id}`);
+        return;
+      }
+
+      const charge = await this.stripe.charges.retrieve(chargeId, {
+        expand: ['balance_transaction'],
+      });
+
+      const bt = charge.balance_transaction as
+        | Stripe.BalanceTransaction
+        | string
+        | null;
+
+      if (!bt || typeof bt === 'string') {
+        this.logger.warn(`stripe fee skipped: balance_transaction not expanded. chargeId=${chargeId}`);
+        return;
+      }
+
+      // fee は最小単位。JPYなら円。
+      if ((bt.currency ?? '').toLowerCase() !== 'jpy') {
+        this.logger.warn(
+          `stripe fee skipped: non-jpy currency. currency=${bt.currency} pi.id=${pi.id}`,
+        );
+        return;
+      }
+
+      const feeJpy = Number(bt.fee ?? 0);
+
+      await this.prisma.payment.update({
+        where: { id: paymentId },
+        data: { stripeFeeJpy: feeJpy },
+      });
+
+      this.logger.log(`stripeFeeJpy updated: paymentId=${paymentId} fee=${feeJpy}`);
+    } catch (e: any) {
+      // Webhook 全体を落とさない（冪等ログは gate 側でも残る）
+      this.logger.error(
+        `stripe fee update failed. pi.id=${pi.id} paymentId=${paymentId}`,
+        e?.stack || e,
+      );
+    }
   }
 }

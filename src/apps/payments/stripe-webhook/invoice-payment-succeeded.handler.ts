@@ -178,7 +178,7 @@ export class InvoicePaymentSucceededHandler {
       paymentId: payment.id,
       externalTxId: invoice.id,
       amountJpy,
-      creatorId: dbSub.creatorId,
+      creatorUserId: dbSub.creatorId,
       shopId: payment.shopId, // ← ★唯一の正解ルート
       chargeId,
     });
