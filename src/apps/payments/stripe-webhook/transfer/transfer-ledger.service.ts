@@ -1,6 +1,6 @@
 // api/src/apps/payments/stripe-webhook/transfer-ledger.service.ts
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { TransferKind } from '@prisma/client';
 
 @Injectable()

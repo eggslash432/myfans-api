@@ -95,7 +95,7 @@ export class CreatorApplicationsController {
     const admins = await this.prisma.shopMember.findMany({
       where: {
         shopId: dto.shopId,
-        role: { in: ['owner', 'admin'] },
+        role: { in: [ShopMemberRole.owner, ShopMemberRole.admin] },
       },
       select: { userId: true },
     });
@@ -103,7 +103,8 @@ export class CreatorApplicationsController {
     await this.notifications.notifyMany(
       admins.map((a) => a.userId),
       {
-        type: 'creator_application.received',
+        type: 'CREATOR',
+        source: 'SYSTEM',
         title: 'クリエイター所属申請',
         body: `${dto.publicName} さんから所属申請が届きました`,
       },
@@ -112,7 +113,8 @@ export class CreatorApplicationsController {
     // 申請者本人へ
     await this.notifications.notify({
       userId,
-      type: 'creator_application.submitted',
+      type: 'CREATOR',
+      source: 'SYSTEM',
       title: '所属申請を受け付けました',
       body: `${shop.name} への所属申請を受け付けました`,
     });
@@ -148,12 +150,10 @@ export class CreatorApplicationsController {
     await this.prisma.$transaction(async (tx) => {
       let shopId = app.shopId;
 
-      // ✅ Shop が無い creator 用（今回の修正ポイント）
+      // ✅ Shop が無い creator 用
       if (!shopId) {
         const shop = await tx.shop.create({
-          data: {
-            name: app.publicName ?? 'My Shop',
-          },
+          data: { name: app.publicName ?? 'My Shop' },
         });
         shopId = shop.id;
       }
@@ -170,14 +170,8 @@ export class CreatorApplicationsController {
 
       // 申請更新（冪等）
       const updated = await tx.creatorApplication.updateMany({
-        where: {
-          id: app.id,
-          status: CreatorApprovalStatus.pending,
-        },
-        data: {
-          status: CreatorApprovalStatus.approved,
-          shopId,
-        },
+        where: { id: app.id, status: CreatorApprovalStatus.pending },
+        data: { status: CreatorApprovalStatus.approved, shopId },
       });
 
       if (updated.count === 0) {
@@ -186,24 +180,16 @@ export class CreatorApplicationsController {
 
       // ShopMember 登録（本人）
       await tx.shopMember.upsert({
-        where: {
-          shopId_userId: {
-            shopId,
-            userId: app.userId,
-          },
-        },
+        where: { shopId_userId: { shopId, userId: app.userId } },
         update: { role: ShopMemberRole.owner },
-        create: {
-          shopId,
-          userId: app.userId,
-          role: ShopMemberRole.owner,
-        },
+        create: { shopId, userId: app.userId, role: ShopMemberRole.owner },
       });
     });
 
     await this.notifications.notify({
       userId: app.userId,
-      type: 'creator_application.approved',
+      type: 'CREATOR',
+      source: 'ADMIN',
       title: 'クリエイター承認完了',
       body: 'ショップが有効化されました',
     });
@@ -229,33 +215,23 @@ export class CreatorApplicationsController {
     });
 
     if (!app) throw new BadRequestException('申請が存在しません');
-    if (!app.shopId) {
-      throw new BadRequestException('Shop が指定されていません');
-    }
+    if (!app.shopId) throw new BadRequestException('Shop が指定されていません');
 
     const member = await this.prisma.shopMember.findUnique({
-      where: {
-        shopId_userId: {
-          shopId: app.shopId,
-          userId,
-        },
-      },
+      where: { shopId_userId: { shopId: app.shopId, userId } },
     });
 
-    if (!member || !['owner', 'admin'].includes(member.role)) {
+    if (
+      !member ||
+      (member.role !== ShopMemberRole.owner && member.role !== ShopMemberRole.admin)
+    ) {
       throw new ForbiddenException('Shop の管理権限がありません');
     }
 
     // 冪等更新
     const updated = await this.prisma.creatorApplication.updateMany({
-      where: {
-        id: applicationId,
-        status: CreatorApprovalStatus.pending,
-      },
-      data: {
-        status: CreatorApprovalStatus.rejected,
-        rejectReason: reason ?? null,
-      },
+      where: { id: applicationId, status: CreatorApprovalStatus.pending },
+      data: { status: CreatorApprovalStatus.rejected, rejectReason: reason ?? null },
     });
 
     if (updated.count === 0) {
@@ -265,7 +241,8 @@ export class CreatorApplicationsController {
     // 通知
     await this.notifications.notify({
       userId: app.userId,
-      type: 'creator_application.rejected',
+      type: 'CREATOR',
+      source: 'ADMIN',
       title: '所属申請が却下されました',
       body: reason
         ? `理由：${reason}`

@@ -13,7 +13,7 @@ import {
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminOnlyGuard } from '../access-control/admin-only.guard';
-import { PayoutsAdminService } from './payouts-admin.service';
+import { PayoutsAdminService } from './payouts/services/payouts-admin.service';
 import { AdminPayoutsQueryDto } from './dto/admin-payouts.query';
 
 @Controller('admin/payouts')

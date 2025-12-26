@@ -8,15 +8,17 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  UseGuards,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
 import type { Request } from 'express';
 
+import { PrismaService } from '../prisma/prisma.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard'; // ← 追加
+
+@UseGuards(JwtAuthGuard) // ← 追加：このController配下はログイン必須
 @Controller('notifications')
 export class NotificationsController {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   // ==============================
   // 通知一覧（自分）
@@ -25,17 +27,16 @@ export class NotificationsController {
   @Get('me')
   async list(@Req() req: Request) {
     const userId = String((req as any).user?.id ?? '');
-    if (!userId) {
-      throw new BadRequestException('ログイン情報が取得できません');
-    }
+    if (!userId) throw new BadRequestException('ログイン情報が取得できません');
 
     const notifications = await this.prisma.notification.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
-      take: 50, // 念のため上限
+      take: 50,
       select: {
         id: true,
         type: true,
+        source: true, // ← 追加
         title: true,
         body: true,
         readAt: true,
@@ -53,15 +54,10 @@ export class NotificationsController {
   @Get('me/unread-count')
   async unreadCount(@Req() req: Request) {
     const userId = String((req as any).user?.id ?? '');
-    if (!userId) {
-      throw new BadRequestException('ログイン情報が取得できません');
-    }
+    if (!userId) throw new BadRequestException('ログイン情報が取得できません');
 
     const count = await this.prisma.notification.count({
-      where: {
-        userId,
-        readAt: null,
-      },
+      where: { userId, readAt: null },
     });
 
     return { count };
@@ -72,31 +68,19 @@ export class NotificationsController {
   // POST /notifications/:id/read
   // ==============================
   @Post(':id/read')
-  async markAsRead(
-    @Req() req: Request,
-    @Param('id') id: string,
-  ) {
+  async markAsRead(@Req() req: Request, @Param('id') id: string) {
     const userId = String((req as any).user?.id ?? '');
-    if (!userId) {
-      throw new BadRequestException('ログイン情報が取得できません');
-    }
+    if (!userId) throw new BadRequestException('ログイン情報が取得できません');
 
     const notif = await this.prisma.notification.findUnique({
       where: { id },
       select: { userId: true, readAt: true },
     });
 
-    if (!notif) {
-      throw new NotFoundException('通知が存在しません');
-    }
+    if (!notif) throw new NotFoundException('通知が存在しません');
+    if (notif.userId !== userId) throw new ForbiddenException('この通知を操作する権限がありません');
 
-    if (notif.userId !== userId) {
-      throw new ForbiddenException('この通知を操作する権限がありません');
-    }
-
-    if (notif.readAt) {
-      return { success: true }; // 既読済み
-    }
+    if (notif.readAt) return { success: true };
 
     await this.prisma.notification.update({
       where: { id },
@@ -113,23 +97,13 @@ export class NotificationsController {
   @Post('me/read-all')
   async readAll(@Req() req: Request) {
     const userId = String((req as any).user?.id ?? '');
-    if (!userId) {
-      throw new BadRequestException('ログイン情報が取得できません');
-    }
+    if (!userId) throw new BadRequestException('ログイン情報が取得できません');
 
     const result = await this.prisma.notification.updateMany({
-      where: {
-        userId,
-        readAt: null,
-      },
-      data: {
-        readAt: new Date(),
-      },
+      where: { userId, readAt: null },
+      data: { readAt: new Date() },
     });
 
-    return {
-      success: true,
-      updated: result.count,
-    };
+    return { success: true, updated: result.count };
   }
 }

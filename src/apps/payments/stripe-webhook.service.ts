@@ -10,6 +10,11 @@ import { CheckoutHandler } from './stripe-webhook/checkout.handler';
 import { SubscriptionHandler } from './stripe-webhook/subscription.handler';
 import { InvoicePaymentSucceededHandler } from './stripe-webhook/invoice-payment-succeeded.handler';
 import { PaymentIntentSucceededHandler } from './stripe-webhook/payment-intent-succeeded.handler';
+
+// ✅ 追加（失敗通知）
+import { InvoicePaymentFailedHandler } from './stripe-webhook/invoice-payment-failed.handler';
+import { PaymentIntentFailedHandler } from './stripe-webhook/payment-intent-failed.handler';
+
 import Stripe from 'stripe';
 import { STRIPE_CLIENT } from './stripe-webhook/stripe-client.provider';
 
@@ -26,6 +31,11 @@ export class StripeWebhookService {
     private readonly subscription: SubscriptionHandler,
     private readonly invoiceSucceeded: InvoicePaymentSucceededHandler,
     private readonly piSucceeded: PaymentIntentSucceededHandler,
+
+    // ✅ 追加（失敗通知）
+    private readonly invoiceFailed: InvoicePaymentFailedHandler,
+    private readonly piFailed: PaymentIntentFailedHandler,
+
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
   ) {}
 
@@ -79,6 +89,16 @@ export class StripeWebhookService {
           );
           break;
 
+        // ✅ 追加：サブスク決済失敗
+        case 'invoice.payment_failed':
+          await this.invoiceFailed.handle(event.data.object as Stripe.Invoice);
+          await this.gate.logWebhook(
+            gate.eventRowId,
+            'handle.invoice.payment_failed',
+            true,
+          );
+          break;
+
         case 'payment_intent.succeeded':
           await this.piSucceeded.handle(
             event.data.object as Stripe.PaymentIntent,
@@ -86,6 +106,16 @@ export class StripeWebhookService {
           await this.gate.logWebhook(
             gate.eventRowId,
             'handle.payment_intent.succeeded',
+            true,
+          );
+          break;
+
+        // ✅ 追加：PPV決済失敗
+        case 'payment_intent.payment_failed':
+          await this.piFailed.handle(event.data.object as Stripe.PaymentIntent);
+          await this.gate.logWebhook(
+            gate.eventRowId,
+            'handle.payment_intent.payment_failed',
             true,
           );
           break;
@@ -220,7 +250,7 @@ export class StripeWebhookService {
     const latestChargeId =
       typeof pi.latest_charge === 'string'
         ? pi.latest_charge
-        : pi.latest_charge?.id;
+        : (pi.latest_charge as any)?.id;
 
     if (!latestChargeId) {
       this.logger.warn(`latest_charge missing for payment_intent: ${pi.id}`);
@@ -259,7 +289,7 @@ export class StripeWebhookService {
     });
 
     this.logger.log(`stripeFeeJpy updated: payment=${payment.id} fee=${feeJpy}`);
-  }  
+  }
 }
 
 function extractPayoutId(desc?: string | null): string | null {

@@ -1,6 +1,6 @@
 // api/src/apps/payments/stripe-webhook/split-transfer.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { TransferKind } from '@prisma/client';
 
 import { FeeSettingLike, makeEffectiveFeeSetting, splitByFeeSetting } from './split-calculator';

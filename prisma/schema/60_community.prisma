@@ -14,19 +14,23 @@ model Report {
 }
 
 model Notification {
-  id     String @id @default(uuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String @id @default(uuid())
 
-  type  String
-  title String
-  body  String
-  readAt DateTime?
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  type      NotificationType
+  source    NotificationSource?
+
+  title     String
+  body      String
+
+  readAt    DateTime?
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
 }
+
 
 model Favorite {
   userId    String
@@ -39,4 +43,35 @@ model Favorite {
   createdAt     DateTime @default(now())
 
   @@id([userId, creatorId])
+}
+
+model SiteAnnouncement {
+  id        Int      @id @default(autoincrement())
+  title     String?
+  body      String
+  linkUrl   String?
+  startsAt DateTime?
+  endsAt   DateTime?
+  isActive Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  actorId  String   // 管理者ID
+  action   String   // USER_FREEZE / POST_DELETE 等
+  target   String?  // user:xxx / post:yyy
+  meta     Json?
+  ip       String?
+  createdAt DateTime @default(now())
+}
+
+model AccessLog {
+  id        Int @id @default(autoincrement())
+  userId   String?
+  role     String?
+  ip       String?
+  ua       String?
+  createdAt DateTime @default(now())
 }

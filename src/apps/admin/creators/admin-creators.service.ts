@@ -1,6 +1,10 @@
 // api/src/apps/admin/creators/admin-creators.service.ts
 
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreatorApprovalStatus } from '@prisma/client';
 
@@ -67,8 +71,8 @@ export class AdminCreatorsService {
     return {
       items: rows.map((r) => ({
         userId: r.userId,
-        email: r.user?.email ?? '', // ✅ null安全
-        displayName: r.user?.profile?.displayName ?? null, // ✅ null安全
+        email: r.user?.email ?? '',
+        displayName: r.user?.profile?.displayName ?? null,
         publicName: r.publicName,
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
@@ -94,7 +98,7 @@ export class AdminCreatorsService {
       await tx.creator.update({
         where: { userId },
         data: {
-          approvalStatus: 'approved',
+          approvalStatus: CreatorApprovalStatus.approved,
           approvedAt: new Date(),
           rejectedAt: null,
           rejectReason: null,
@@ -102,10 +106,12 @@ export class AdminCreatorsService {
         },
       });
 
+      // ✅ Notification: enum(type/source) 対応
       await tx.notification.create({
         data: {
           userId,
-          type: 'creator_approved',
+          type: 'CREATOR',
+          source: 'ADMIN',
           title: 'クリエイター申請が承認されました',
           body: 'クリエイター機能が利用可能になりました。プロフィール設定と本人確認（KYC）を進めてください。',
         },
@@ -128,7 +134,7 @@ export class AdminCreatorsService {
     await this.prisma.creator.update({
       where: { userId },
       data: {
-        approvalStatus: 'rejected',
+        approvalStatus: CreatorApprovalStatus.rejected,
         rejectedAt: new Date(),
         approvedAt: null,
         rejectReason: reason,
@@ -136,10 +142,12 @@ export class AdminCreatorsService {
       },
     });
 
+    // ✅ Notification: enum(type/source) 対応
     await this.prisma.notification.create({
       data: {
         userId,
-        type: 'creator_rejected',
+        type: 'CREATOR',
+        source: 'ADMIN',
         title: 'クリエイター申請が差し戻されました',
         body: `差し戻し理由：${reason}`,
       },

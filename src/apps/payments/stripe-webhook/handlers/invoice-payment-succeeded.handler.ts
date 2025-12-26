@@ -1,11 +1,12 @@
 // api/src/apps/payments/stripe-webhook/invoice-payment-succeeded.handler.ts
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { SubStatus } from '@prisma/client';
-import { STRIPE_CLIENT } from './stripe-client.provider';
-import { SplitTransferService } from './split-transfer.service';
-import { PaymentsWriterService } from '../writer/payments-writer.service';
+import { STRIPE_CLIENT } from '../transfer/stripe-client.provider';
+import { SplitTransferService } from '../transfer/split-transfer.service';
+import { PaymentsWriterService } from '../../writer/payments-writer.service';
+import { NotificationsService } from '../../../notifications/notifications.service'; // ✅ 追加
 
 @Injectable()
 export class InvoicePaymentSucceededHandler {
@@ -16,6 +17,7 @@ export class InvoicePaymentSucceededHandler {
     private readonly paymentsWriter: PaymentsWriterService,
     private readonly splitTransfers: SplitTransferService,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe,
+    private readonly notifications: NotificationsService, // ✅ 追加
   ) {}
 
   async handle(invoice: Stripe.Invoice) {
@@ -201,6 +203,41 @@ export class InvoicePaymentSucceededHandler {
         create: { userId: dbSub.userId, postId: p.id, expiresAt: null },
         update: {},
       });
+    }
+
+    // -------------------------
+    // ✅ 通知（Webhook由来）
+    // -------------------------
+    try {
+      const plan = await this.prisma.plan.findUnique({
+        where: { id: dbSub.planId },
+        select: { name: true },
+      });
+      const planLabel = plan?.name ? `「${plan.name}」` : 'プラン';
+      const yen = `¥${amountJpy.toLocaleString('ja-JP')}`;
+
+      // 購読者へ
+      await this.notifications.notify({
+        userId: dbSub.userId,
+        type: 'PAYMENT',
+        source: 'WEBHOOK',
+        title: 'サブスク決済が完了しました',
+        body: `${planLabel}の決済が完了しました（${yen}）。`,
+      });
+
+      // クリエイターへ
+      await this.notifications.notify({
+        userId: dbSub.creatorId,
+        type: 'PAYMENT',
+        source: 'WEBHOOK',
+        title: 'サブスク収益が発生しました',
+        body: `${planLabel}で決済が発生しました（${yen}）。`,
+      });
+    } catch (e: any) {
+      this.logger.warn(
+        `notification failed (invoice.payment_succeeded). invoiceId=${invoice.id}`,
+        e?.message || e,
+      );
     }
 
     this.logger.log(

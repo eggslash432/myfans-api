@@ -1,7 +1,7 @@
 // api/src/apps/payments/stripe-webhook/account-updated.handler.ts
 import { Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { KycStatus } from '@prisma/client';
 
 @Injectable()

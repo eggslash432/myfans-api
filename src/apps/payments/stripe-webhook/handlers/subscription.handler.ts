@@ -1,7 +1,7 @@
 // api/src/apps/payments/stripe-webhook/subscription.handler.ts
 import { Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { SubStatus } from '@prisma/client';
 
 @Injectable()

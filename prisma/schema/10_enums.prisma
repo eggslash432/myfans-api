@@ -122,6 +122,25 @@ enum ReportStatus {
 }
 
 // ==============================
+// 通知・ログ
+// ==============================
+enum NotificationType {
+  SYSTEM        // システム全般
+  PAYMENT       // 決済・課金
+  KYC           // 本人確認
+  REPORT        // 通報
+  POST          // 投稿関連
+  ANNOUNCEMENT  // 告知
+  CREATOR
+}
+
+enum NotificationSource {
+  SYSTEM    // バッチ・内部処理
+  ADMIN     // 管理画面操作
+  WEBHOOK   // Stripe等の外部イベント
+}
+
+// ==============================
 // UI（フロント都合の enum）
 // ==============================
 enum PlanModalMode {

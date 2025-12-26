@@ -12,8 +12,9 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreatorOnlyGuard } from '../access-control/creator-only.guard';
 import { PrismaService } from '../prisma/prisma.service';
-import { PayoutsBalanceService } from './payouts-balance.service';
-import { PayoutsRequestsService } from './payouts-requests.service';
+import { PayoutsRequestsService } from './payouts/services/payouts-requests.service';
+import { PayoutsBalanceService } from './payouts/services/payouts-balance.service';
+
 
 @Controller('creators/me/payouts')
 @UseGuards(JwtAuthGuard, CreatorOnlyGuard)

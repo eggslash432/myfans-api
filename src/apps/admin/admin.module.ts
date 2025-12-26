@@ -15,6 +15,7 @@ import { AdminShopsController } from './admin-shops.controller';
 import { AdminCreatorsController } from './creators/admin-creators.controller';
 import { AdminCreatorsService } from './creators/admin-creators.service';
 import { AdminShopsService } from './admin-shops.service';
+import { AdminNotificationsController } from './admin-notifications.controller';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AdminShopsService } from './admin-shops.service';
     AdminSettingsController,
     AdminUsersController,
     AdminShopsController,
+    AdminNotificationsController,
   ],
   providers: [
     PrismaService,

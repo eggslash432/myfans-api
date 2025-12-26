@@ -5,10 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
 import { PayoutStatus, PayoutTargetType, Prisma } from '@prisma/client';
+import { PrismaService } from 'src/apps/prisma/prisma.service';
 import Stripe from 'stripe';
-import { AdminPayoutsQueryDto } from './dto/admin-payouts.query';
+import { AdminPayoutsQueryDto } from '../../dto/admin-payouts.query';
+
 
 function formatDate(d: Date) {
   return d.toISOString().replace('T', ' ').slice(0, 16);

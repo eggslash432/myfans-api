@@ -1,10 +1,11 @@
 // api/src/apps/payments/stripe-webhook/payment-intent-succeeded.handler.ts
 import { Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
-import { PrismaService } from '../../prisma/prisma.service';
-import { SplitTransferService } from './split-transfer.service';
-import { PaymentsWriterService } from '../writer/payments-writer.service';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { SplitTransferService } from '../transfer/split-transfer.service';
+import { PaymentsWriterService } from '../../writer/payments-writer.service';
 import { ConfigService } from '@nestjs/config';
+import { NotificationsService } from '../../../notifications/notifications.service'; // ✅ 追加
 
 @Injectable()
 export class PaymentIntentSucceededHandler {
@@ -16,6 +17,7 @@ export class PaymentIntentSucceededHandler {
     private readonly paymentsWriter: PaymentsWriterService,
     private readonly splitTransfers: SplitTransferService,
     private readonly config: ConfigService,
+    private readonly notifications: NotificationsService, // ✅ 追加
   ) {
     const secret =
       this.config.get<string>('STRIPE_SECRET_KEY') ?? process.env.STRIPE_SECRET_KEY;
@@ -42,7 +44,7 @@ export class PaymentIntentSucceededHandler {
     // post から creatorId（= creator.userId）を確定させる（metadata.creatorId は信用しない）
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      select: { id: true, creatorId: true },
+      select: { id: true, creatorId: true, title: true }, // ✅ title追加
     });
     if (!post?.creatorId) {
       this.logger.warn(`Post not found or missing creatorId: postId=${postId}`);
@@ -79,9 +81,12 @@ export class PaymentIntentSucceededHandler {
     if (!payment) return;
 
     // ✅ stripeFeeJpy を保存（冪等）
-    // - chargeId が取れないケースもあるので、その場合はスキップ
-    // - 既に stripeFeeJpy が入っていればスキップ
-    await this.tryUpdateStripeFeeJpy(payment.id, payment.stripeFeeJpy ?? null, pi, chargeId);
+    await this.tryUpdateStripeFeeJpy(
+      payment.id,
+      payment.stripeFeeJpy ?? null,
+      pi,
+      chargeId,
+    );
 
     // ✅ shopId は payment.shopId を正とする（metadataは補助）
     const shopIdResolved =
@@ -104,6 +109,35 @@ export class PaymentIntentSucceededHandler {
       create: { userId, postId, expiresAt: null },
       update: {},
     });
+
+    // ✅ 通知（Webhook由来）
+    try {
+      const postLabel = post.title ? `「${post.title}」` : '有料投稿';
+      const yen = `¥${amountJpy.toLocaleString('ja-JP')}`;
+
+      // 購入者へ
+      await this.notifications.notify({
+        userId,
+        type: 'PAYMENT',
+        source: 'WEBHOOK',
+        title: '購入が完了しました',
+        body: `${postLabel}の購入が完了しました（${yen}）。`,
+      });
+
+      // クリエイターへ
+      await this.notifications.notify({
+        userId: resolvedCreatorId,
+        type: 'PAYMENT',
+        source: 'WEBHOOK',
+        title: '購入がありました',
+        body: `${postLabel}が購入されました（${yen}）。`,
+      });
+    } catch (e: any) {
+      this.logger.warn(
+        `notification failed (payment_intent.succeeded). pi.id=${pi.id}`,
+        e?.message || e,
+      );
+    }
 
     // 参考：metadataのcreatorIdがズレてたらログ（原因調査用）
     const creatorIdMeta = m.creatorId as string | undefined;
@@ -152,7 +186,9 @@ export class PaymentIntentSucceededHandler {
         | null;
 
       if (!bt || typeof bt === 'string') {
-        this.logger.warn(`stripe fee skipped: balance_transaction not expanded. chargeId=${chargeId}`);
+        this.logger.warn(
+          `stripe fee skipped: balance_transaction not expanded. chargeId=${chargeId}`,
+        );
         return;
       }
 
@@ -171,7 +207,9 @@ export class PaymentIntentSucceededHandler {
         data: { stripeFeeJpy: feeJpy },
       });
 
-      this.logger.log(`stripeFeeJpy updated: paymentId=${paymentId} fee=${feeJpy}`);
+      this.logger.log(
+        `stripeFeeJpy updated: paymentId=${paymentId} fee=${feeJpy}`,
+      );
     } catch (e: any) {
       // Webhook 全体を落とさない（冪等ログは gate 側でも残る）
       this.logger.error(
