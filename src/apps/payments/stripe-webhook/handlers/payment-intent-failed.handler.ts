@@ -1,9 +1,9 @@
 // api/src/apps/payments/stripe-webhook/payment-intent-failed.handler.ts
-
 import { Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { NotificationsService } from '../../../notifications/notifications.service';
+import { NotificationSource, NotificationType } from '@prisma/client';
 
 @Injectable()
 export class PaymentIntentFailedHandler {
@@ -45,8 +45,8 @@ export class PaymentIntentFailedHandler {
       // 購入者へ
       await this.notifications.notify({
         userId,
-        type: 'PAYMENT',
-        source: 'WEBHOOK',
+        type: NotificationType.PAYMENT,
+        source: NotificationSource.WEBHOOK,
         title: '決済に失敗しました',
         body:
           `${postLabel}の購入に失敗しました。` +
@@ -58,8 +58,8 @@ export class PaymentIntentFailedHandler {
       // クリエイターへ（簡潔に）
       await this.notifications.notify({
         userId: post.creatorId,
-        type: 'PAYMENT',
-        source: 'WEBHOOK',
+        type: NotificationType.PAYMENT,
+        source: NotificationSource.WEBHOOK,
         title: '購入失敗',
         body: `${postLabel}の決済が失敗しました。`,
       });

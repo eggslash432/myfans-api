@@ -15,8 +15,8 @@ import { ShopMeController } from './shop-me.controller';
 import { ShopPayoutController } from './shop-payout.controller';
 import { ShopPayoutService } from './shop-payout.service';
 import { PaymentsModule } from '../payments/payments.module';
-import { PayoutsModule } from '../payments/payouts.module';
 import { ShopOwnerOrAdminGuard } from '../access-control/shop-owner-or-admin.guard';
+import { PayoutsModule } from '../payments/payouts/payouts.module';
 
 @Module({
   imports:[

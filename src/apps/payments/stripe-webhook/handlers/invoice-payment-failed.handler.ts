@@ -1,10 +1,10 @@
-//api/src/apps/payments/stripe-webhook/invoice-payment-failed.handler.ts
-
+// api/src/apps/payments/stripe-webhook/invoice-payment-failed.handler.ts
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { STRIPE_CLIENT } from '../transfer/stripe-client.provider';
+import { STRIPE_CLIENT } from '../transfer/stripe-client.provider'; // ✅ ここを統一
 import { NotificationsService } from '../../../notifications/notifications.service';
+import { NotificationSource, NotificationType } from '@prisma/client';
 
 @Injectable()
 export class InvoicePaymentFailedHandler {
@@ -81,7 +81,6 @@ export class InvoicePaymentFailedHandler {
       if (plan?.name) planLabel = `「${plan.name}」`;
     } catch (_) {}
 
-    // 失敗理由（Stripeのfailure_message等は状況で取れたり取れなかったり）
     const failureMsg =
       (inv.last_finalization_error?.message as string | undefined) ??
       (inv.payment_intent?.last_payment_error?.message as string | undefined) ??
@@ -91,8 +90,8 @@ export class InvoicePaymentFailedHandler {
       // 購読者へ
       await this.notifications.notify({
         userId: dbSub.userId,
-        type: 'PAYMENT',
-        source: 'WEBHOOK',
+        type: NotificationType.PAYMENT,
+        source: NotificationSource.WEBHOOK,
         title: 'サブスク決済に失敗しました',
         body:
           `${planLabel}の決済に失敗しました。` +
@@ -104,8 +103,8 @@ export class InvoicePaymentFailedHandler {
       // クリエイターへ（簡潔に）
       await this.notifications.notify({
         userId: dbSub.creatorId,
-        type: 'PAYMENT',
-        source: 'WEBHOOK',
+        type: NotificationType.PAYMENT,
+        source: NotificationSource.WEBHOOK,
         title: 'サブスク決済失敗',
         body:
           `${planLabel}の決済が失敗しました。` +

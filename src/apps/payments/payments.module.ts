@@ -6,7 +6,6 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { HelpersModule } from '../helpers/helpers.module';
 
 import { PayoutsModule } from './payouts/payouts.module';
-import { StripeWebhookModule } from './stripe-webhook/stripe-webhook.module';
 
 import { PaymentsController } from './payments.controller';
 import { CreatorPayoutsController } from './payouts.creator.controller';
@@ -23,7 +22,6 @@ import { PaymentShareService } from './share/payment-share.service';
     ConfigModule,
     HelpersModule,
     PayoutsModule,
-    StripeWebhookModule, // ✅ webhookは切り出し
   ],
   controllers: [
     PaymentsController, 

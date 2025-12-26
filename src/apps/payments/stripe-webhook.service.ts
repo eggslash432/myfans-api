@@ -5,18 +5,18 @@ import { PaymentsService } from './payments.service';
 import { PayoutStatus } from '@prisma/client';
 
 import { WebhookGate } from './stripe-webhook/webhook-gate';
-import { AccountUpdatedHandler } from './stripe-webhook/account-updated.handler';
-import { CheckoutHandler } from './stripe-webhook/checkout.handler';
-import { SubscriptionHandler } from './stripe-webhook/subscription.handler';
-import { InvoicePaymentSucceededHandler } from './stripe-webhook/invoice-payment-succeeded.handler';
-import { PaymentIntentSucceededHandler } from './stripe-webhook/payment-intent-succeeded.handler';
+import { AccountUpdatedHandler } from './stripe-webhook/handlers/account-updated.handler';
+import { CheckoutHandler } from './stripe-webhook/handlers/checkout.handler';
+import { SubscriptionHandler } from './stripe-webhook/handlers/subscription.handler';
+import { InvoicePaymentSucceededHandler } from './stripe-webhook/handlers/invoice-payment-succeeded.handler';
+import { PaymentIntentSucceededHandler } from './stripe-webhook/handlers/payment-intent-succeeded.handler';
 
 // ✅ 追加（失敗通知）
-import { InvoicePaymentFailedHandler } from './stripe-webhook/invoice-payment-failed.handler';
-import { PaymentIntentFailedHandler } from './stripe-webhook/payment-intent-failed.handler';
+import { InvoicePaymentFailedHandler } from './stripe-webhook/handlers/invoice-payment-failed.handler';
+import { PaymentIntentFailedHandler } from './stripe-webhook/handlers/payment-intent-failed.handler';
 
 import Stripe from 'stripe';
-import { STRIPE_CLIENT } from './stripe-webhook/stripe-client.provider';
+import { STRIPE_CLIENT } from './stripe-webhook/transfer/stripe-client.provider';
 
 @Injectable()
 export class StripeWebhookService {

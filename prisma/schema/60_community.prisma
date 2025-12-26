@@ -1,5 +1,21 @@
 // api/prisma/schema/60_community.prisma
 
+model Announcement {
+  id            Int      @id @default(autoincrement())
+  title         String
+  body          String
+  linkUrl       String?  // 任意：クリック遷移先
+  bannerImageUrl String? // 任意：バナー画像URL（S3/CloudFront等）
+  startsAt      DateTime? // 任意：開始
+  endsAt        DateTime? // 任意：終了
+  isEnabled     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([isEnabled])
+  @@index([startsAt, endsAt])
+}
+
 model Report {
   id     String @id @default(uuid())
   postId String

@@ -16,6 +16,7 @@ import { AdminCreatorsController } from './creators/admin-creators.controller';
 import { AdminCreatorsService } from './creators/admin-creators.service';
 import { AdminShopsService } from './admin-shops.service';
 import { AdminNotificationsController } from './admin-notifications.controller';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AdminNotificationsController } from './admin-notifications.controller';
     AdminShopsService,
     S3Service,
     PostDeleteService,
+    NotificationsService,
   ],
   exports:[
     PostDeleteService,

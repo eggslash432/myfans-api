@@ -14,8 +14,9 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ShopOwnerOrAdminGuard } from '../access-control/shop-owner-or-admin.guard';
 
 import { CreateShopPayoutDto } from './dto/shop-payout.dto';
-import { PayoutsRequestsService } from '../payments/payouts-requests.service';
-import { PayoutsBalanceService } from '../payments/payouts-balance.service';
+import { PayoutsRequestsService } from '../payments/payouts/services/payouts-requests.service';
+import { PayoutsBalanceService } from '../payments/payouts/services/payouts-balance.service';
+
 
 @Controller('shops/me/payouts')
 @UseGuards(JwtAuthGuard, ShopOwnerOrAdminGuard)

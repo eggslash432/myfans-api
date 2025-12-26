@@ -1,7 +1,7 @@
 // api/src/apps/payments/payouts-balance.service.ts
 
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 import {
   PaymentStatus,
   PayoutStatus,

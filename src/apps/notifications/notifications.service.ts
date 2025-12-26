@@ -7,59 +7,102 @@ import { NotificationSource, NotificationType } from '@prisma/client';
 export class NotificationsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // enum 追加時もここだけ追記でOK
+  private readonly TYPE_SET = new Set<NotificationType>([
+    'SYSTEM',
+    'PAYMENT',
+    'KYC',
+    'REPORT',
+    'POST',
+    'ANNOUNCEMENT',
+    'CREATOR',
+  ]);
+
+  private readonly SOURCE_SET = new Set<NotificationSource>([
+    'SYSTEM',
+    'ADMIN',
+    'WEBHOOK',
+  ]);
+
   /**
    * 旧string type を enum NotificationType に寄せる
-   * ここで吸収しておくと、既存呼び出し箇所の修正を段階的に進められる
+   * - 既存呼び出し箇所の修正を段階的に進めるための互換層
    */
   private coerceType(type: NotificationType | string): NotificationType {
-    // すでに enum 値ならそのまま
-    if (
-      type === 'SYSTEM' ||
-      type === 'PAYMENT' ||
-      type === 'KYC' ||
-      type === 'REPORT' ||
-      type === 'POST' ||
-      type === 'ANNOUNCEMENT' ||
-      type === 'CREATOR'
-    ) {
-      return type;
+    // すでに enum ならそのまま
+    if (this.TYPE_SET.has(type as NotificationType)) {
+      return type as NotificationType;
     }
 
-    const t = String(type ?? '').toLowerCase();
+    const raw = typeof type === 'string' ? type : String(type ?? '');
+    const t = raw.trim().toLowerCase();
+
+    // 空は SYSTEM
+    if (!t) return 'SYSTEM';
 
     // 既存の自由文字列をざっくり分類（必要に応じて追加）
-    if (t.includes('kyc') || t.includes('identity')) return 'KYC';
-    if (t.includes('pay') || t.includes('stripe') || t.includes('payment')) return 'PAYMENT';
-    if (t.includes('report') || t.includes('abuse')) return 'REPORT';
+    if (t.includes('kyc') || t.includes('identity') || t.includes('verification')) return 'KYC';
+    if (t.includes('pay') || t.includes('stripe') || t.includes('payment') || t.includes('invoice') || t.includes('payout')) return 'PAYMENT';
+    if (t.includes('report') || t.includes('abuse') || t.includes('moderation') || t.includes('freeze')) return 'REPORT';
     if (t.includes('post')) return 'POST';
-    if (t.includes('announce') || t.includes('notice')) return 'ANNOUNCEMENT';
+    if (t.includes('announce') || t.includes('announcement') || t.includes('notice') || t.includes('cms')) return 'ANNOUNCEMENT';
     if (t.includes('creator') || t.includes('application') || t.includes('shop')) return 'CREATOR';
 
     return 'SYSTEM';
   }
 
-  private coerceSource(source?: NotificationSource | string | null): NotificationSource {
-    if (source === 'SYSTEM' || source === 'ADMIN' || source === 'WEBHOOK') return source;
-    const s = String(source ?? '').toLowerCase();
+  /**
+   * source の互換変換
+   * - undefined: 指定なし → SYSTEM に寄せる（運用上わかりやすい）
+   * - null: 明示的に null を入れたいケースを許容（必要なければ常に SYSTEM でもOK）
+   * - string: ざっくり分類
+   */
+  private coerceSource(
+    source?: NotificationSource | string | null,
+  ): NotificationSource | null {
+    // 明示nullは null として保存できるようにする
+    if (source === null) return null;
+
+    // 未指定は SYSTEM 扱い
+    if (source === undefined) return 'SYSTEM';
+
+    // enum ならそのまま
+    if (this.SOURCE_SET.has(source as NotificationSource)) {
+      return source as NotificationSource;
+    }
+
+    const raw = typeof source === 'string' ? source : String(source ?? '');
+    const s = raw.trim().toLowerCase();
+
+    if (!s) return 'SYSTEM';
     if (s.includes('admin')) return 'ADMIN';
     if (s.includes('webhook')) return 'WEBHOOK';
+    if (s.includes('system')) return 'SYSTEM';
+
+    // 不明なら SYSTEM
     return 'SYSTEM';
   }
 
   async notify(params: {
     userId: string;
-    type: NotificationType | string; // ← 互換: stringもOK
-    source?: NotificationSource | string; // ← optional
+    type: NotificationType | string; // 互換
+    source?: NotificationSource | string | null; // optional + null許容
     title: string;
     body: string;
   }) {
+    const userId = String(params.userId ?? '').trim();
+    if (!userId) throw new Error('notify: userId is required');
+
+    const title = String(params.title ?? '').trim();
+    const body = String(params.body ?? '').trim();
+
     return this.prisma.notification.create({
       data: {
-        userId: params.userId,
+        userId,
         type: this.coerceType(params.type),
         source: this.coerceSource(params.source),
-        title: params.title,
-        body: params.body,
+        title,
+        body,
       },
     });
   }
@@ -67,24 +110,28 @@ export class NotificationsService {
   async notifyMany(
     userIds: string[],
     params: {
-      type: NotificationType | string; // ← 互換
-      source?: NotificationSource | string;
+      type: NotificationType | string; // 互換
+      source?: NotificationSource | string | null;
       title: string;
       body: string;
     },
   ) {
-    if (userIds.length === 0) return;
+    const ids = (userIds ?? []).map((x) => String(x ?? '').trim()).filter(Boolean);
+    if (ids.length === 0) return;
 
     const type = this.coerceType(params.type);
     const source = this.coerceSource(params.source);
 
+    const title = String(params.title ?? '').trim();
+    const body = String(params.body ?? '').trim();
+
     await this.prisma.notification.createMany({
-      data: userIds.map((userId) => ({
+      data: ids.map((userId) => ({
         userId,
         type,
         source,
-        title: params.title,
-        body: params.body,
+        title,
+        body,
       })),
     });
   }
