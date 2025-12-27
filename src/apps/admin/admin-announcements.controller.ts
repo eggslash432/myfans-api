@@ -105,21 +105,4 @@ export class AdminAnnouncementsController {
     await this.prisma.announcement.delete({ where: { id: announcementId } });
     return { ok: true };
   }
-
-  @Get('announcements/active')
-  async active() {
-    const now = new Date();
-    const items = await this.prisma.announcement.findMany({
-      where: {
-        isEnabled: true,
-        AND: [
-          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
-          { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
-        ],
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 3,
-    });
-    return { items };
-  }  
 }
