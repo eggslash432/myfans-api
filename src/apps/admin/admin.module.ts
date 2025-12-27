@@ -18,6 +18,7 @@ import { AdminShopsService } from './admin-shops.service';
 import { AdminNotificationsController } from './admin-notifications.controller';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AdminAnnouncementsController } from './admin-announcements.controller';
+import { AdminAnnouncementsMediaController } from './admin-announcement-media.controller';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { AdminAnnouncementsController } from './admin-announcements.controller';
     AdminShopsController,
     AdminNotificationsController,
     AdminAnnouncementsController,
+    AdminAnnouncementsMediaController,
   ],
   providers: [
     PrismaService,

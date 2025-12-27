@@ -17,6 +17,7 @@ export class AnnouncementsController {
           { OR: [{ endsAt: null }, { endsAt: { gte: now } }] },
         ],
       },
+      include: { medias: { orderBy: { sortOrder: 'asc' } } },
       orderBy: { createdAt: 'desc' },
       take: 3,
     });

@@ -22,6 +22,20 @@ type BufferSaveInput = {
   contentType: string;
 };
 
+type TmpSaveAnnouncementInput = {
+  announcementId: string;
+  tmpPath: string;
+  originalName: string;
+  contentType: string;
+};
+
+type BufferSaveAnnouncementInput = {
+  announcementId: string;
+  buffer: Buffer;
+  originalName: string;
+  contentType: string;
+};
+
 @Injectable()
 export class MediaStorageService {
   constructor(private readonly s3: S3Service) {}
@@ -192,5 +206,67 @@ export class MediaStorageService {
 
     // s3
     await this.s3.deleteKeys(uniq);
+  }  
+
+  async saveAnnouncementFileFromTemp(input: TmpSaveAnnouncementInput): Promise<string> {
+    const { announcementId, tmpPath, originalName, contentType } = input;
+    if (!announcementId) throw new BadRequestException('announcementId is required');
+    if (!tmpPath) throw new BadRequestException('tmpPath is required');
+
+    const ext = this.sanitizeExt(originalName, '.bin');
+
+    if (IS_MEDIA_LOCAL) {
+      // tmp -> uploads/announcements/<id>/<filename>
+      const destDir = join(process.cwd(), 'uploads', 'announcements', announcementId);
+      await this.ensureDir(destDir);
+
+      const filename = `${randomUUID()}${ext}`;
+      const destPath = join(destDir, filename);
+
+      await fsp.rename(tmpPath, destPath);
+      return this.localPublicUrlFromAbsolutePath(destPath); // /uploads/announcements/<id>/...
+    }
+
+    // s3
+    const key = `uploads/announcements/${announcementId}/${Date.now()}-${randomUUID()}${ext}`;
+    await this.s3.uploadFilePath({
+      key,
+      contentType: contentType || 'application/octet-stream',
+      filePath: tmpPath,
+    });
+
+    await this.safeUnlink(tmpPath);
+    return `/${key}`;
+  }
+
+  // =============================
+  // Announcement media from buffer (memory)
+  // =============================
+  async saveAnnouncementFileFromBuffer(input: BufferSaveAnnouncementInput): Promise<string> {
+    const { announcementId, buffer, originalName, contentType } = input;
+    if (!announcementId) throw new BadRequestException('announcementId is required');
+    if (!buffer) throw new BadRequestException('buffer is required');
+
+    const ext = this.sanitizeExt(originalName, '.bin');
+
+    if (IS_MEDIA_LOCAL) {
+      const destDir = join(process.cwd(), 'uploads', 'announcements', announcementId);
+      await this.ensureDir(destDir);
+
+      const filename = `${randomUUID()}${ext}`;
+      const destPath = join(destDir, filename);
+
+      await fsp.writeFile(destPath, buffer);
+      return this.localPublicUrlFromAbsolutePath(destPath);
+    }
+
+    const key = `uploads/announcements/${announcementId}/${Date.now()}-${randomUUID()}${ext}`;
+    await this.s3.putObject({
+      key,
+      contentType: contentType || 'application/octet-stream',
+      buffer,
+    });
+
+    return `/${key}`;
   }  
 }
