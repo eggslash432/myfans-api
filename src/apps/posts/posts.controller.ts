@@ -37,6 +37,20 @@ import { PostDeleteService } from './post-delete.service';
 // ✅ S3Service は使わない（切替は Storage 側へ委譲）
 import { MediaStorageService } from '../storage/media-storage.service';
 
+function extractStorageKey(url: string) {
+  if (!url) return '';
+  // 絶対URLなら pathname を使う
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    try {
+      return new URL(url).pathname.replace(/^\/+/, '');
+    } catch {
+      return '';
+    }
+  }
+  // 相対ならそのまま
+  return url.replace(/^\/+/, '');
+}
+
 @Controller('posts')
 export class PostsController {
   constructor(
@@ -261,7 +275,7 @@ export class PostsController {
     await this.prisma.postMedia.delete({ where: { id: mediaId } });
 
     // 実体削除（/uploads/... -> uploads/...）
-    const key = (media.url || '').replace(/^\/+/, '');
+    const key = extractStorageKey(media.url ?? '');
     if (key) await this.mediaStorage.deleteKeys([key]);
 
     // （任意）sortOrder 詰め直し：表示の順番が重要なら入れる

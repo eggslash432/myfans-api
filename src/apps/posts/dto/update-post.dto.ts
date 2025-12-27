@@ -41,7 +41,7 @@ export class UpdatePostMediaDto {
   // ✅ 追加
   @IsOptional()
   @IsString()
-  genreId?: string | null;  
+  genreId?: string;  
 }
 
 /**
