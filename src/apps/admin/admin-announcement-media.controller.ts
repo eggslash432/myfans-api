@@ -2,6 +2,7 @@
 import {
   BadRequestException,
   Controller,
+  Get,
   Param,
   Post,
   UploadedFiles,
@@ -15,6 +16,38 @@ import { AdminOnlyGuard } from '../access-control/admin-only.guard';
 import { MediaStorageService } from '../storage/media-storage.service';
 import { IS_MEDIA_LOCAL } from '../../shared/media-env';
 
+import { diskStorage, memoryStorage } from 'multer';
+import { extname } from 'path';
+import { existsSync, mkdirSync } from 'fs';
+
+function ensureTmpDir() {
+  const dir = 'uploads/tmp';
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function multerOptionsForEnv() {
+  if (IS_MEDIA_LOCAL) {
+    const destination = ensureTmpDir();
+    return {
+      storage: diskStorage({
+        destination,
+        filename: (_req, file, cb) => {
+          const safeExt = extname(file.originalname || '') || '';
+          const uniq = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+          cb(null, `${uniq}${safeExt}`);
+        },
+      }),
+      limits: { fileSize: 200 * 1024 * 1024 }, // 任意
+    };
+  }
+  // s3/buffer
+  return {
+    storage: memoryStorage(),
+    limits: { fileSize: 200 * 1024 * 1024 }, // 任意
+  };
+}
+
 @UseGuards(JwtAuthGuard, AdminOnlyGuard)
 @Controller('admin/announcements')
 export class AdminAnnouncementsMediaController {
@@ -24,7 +57,7 @@ export class AdminAnnouncementsMediaController {
   ) {}
 
   @Post(':id/media')
-  @UseInterceptors(FilesInterceptor('files'))
+  @UseInterceptors(FilesInterceptor('files', 10, multerOptionsForEnv()))
   async upload(@Param('id') id: string, @UploadedFiles() files: any[]) {
     const announcementId = Number(id);
     if (!Number.isFinite(announcementId)) throw new BadRequestException('invalid id');
@@ -44,7 +77,10 @@ export class AdminAnnouncementsMediaController {
 
         // local: diskStorage -> file.path
         if (IS_MEDIA_LOCAL) {
-          if (!file.path) throw new BadRequestException('local upload expects diskStorage file.path');
+          if (!file.path) {
+            // ここに来たらインターセプタ設定が効いてない
+            throw new BadRequestException('local upload expects diskStorage file.path');
+          }
           return this.storage.saveAnnouncementFileFromTemp({
             announcementId: String(announcementId),
             tmpPath: file.path,
@@ -76,6 +112,19 @@ export class AdminAnnouncementsMediaController {
         }),
       ),
     );
+
+    return { items };
+  }
+
+  @Get(':id/media')
+  async list(@Param('id') id: string) {
+    const announcementId = Number(id);
+    if (!Number.isFinite(announcementId)) throw new BadRequestException('invalid id');
+
+    const items = await this.prisma.announcementMedia.findMany({
+      where: { announcementId },
+      orderBy: { sortOrder: 'asc' },
+    });
 
     return { items };
   }

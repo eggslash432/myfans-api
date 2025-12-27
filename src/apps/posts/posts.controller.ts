@@ -233,6 +233,55 @@ export class PostsController {
     return { ok: true, items };
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Delete(':postId/media/:mediaId')
+  async deleteMedia(
+    @Param('postId') postId: string,
+    @Param('mediaId') mediaId: string,
+    @Req() req: any,
+  ) {
+    const user = req.user as UserJwt | undefined;
+    if (!user?.id) throw new UnauthorizedException('ログインが必要です');
+
+    // 投稿の所有者チェック（creatorId == user.id）
+    const post = await this.prisma.post.findUnique({
+      where: { id: postId },
+      select: { id: true, creatorId: true },
+    });
+    if (!post) throw new NotFoundException('投稿が見つかりません');
+    if (post.creatorId !== user.id) throw new ForbiddenException('権限がありません');
+
+    // 対象メディア取得
+    const media = await this.prisma.postMedia.findFirst({
+      where: { id: mediaId, postId },
+    });
+    if (!media) return { ok: true };
+
+    // DB削除
+    await this.prisma.postMedia.delete({ where: { id: mediaId } });
+
+    // 実体削除（/uploads/... -> uploads/...）
+    const key = (media.url || '').replace(/^\/+/, '');
+    if (key) await this.mediaStorage.deleteKeys([key]);
+
+    // （任意）sortOrder 詰め直し：表示の順番が重要なら入れる
+    const rest = await this.prisma.postMedia.findMany({
+      where: { postId },
+      orderBy: { sortOrder: 'asc' },
+      select: { id: true },
+    });
+    await this.prisma.$transaction(
+      rest.map((m, idx) =>
+        this.prisma.postMedia.update({
+          where: { id: m.id },
+          data: { sortOrder: idx },
+        }),
+      ),
+    );
+
+    return { ok: true };
+  }  
+
   // ==============================
   // Update my post
   // PATCH /posts/me/:id

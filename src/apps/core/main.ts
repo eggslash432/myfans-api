@@ -10,31 +10,37 @@ import cookieParser from 'cookie-parser';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
 import { IS_MEDIA_LOCAL } from 'src/shared/media-env';
+import * as express from 'express'; // ✅ 追加
 
 function ensureUploadDirs() {
-  const dirs = ['uploads', 'uploads/creators', 'uploads/posts'].map((p) =>
-    join(process.cwd(), p),
-  );
+  const dirs = [
+    'uploads',
+    'uploads/creators',
+    'uploads/posts',
+    'uploads/announcements', // ✅ 追加
+  ].map((p) => join(process.cwd(), p));
   dirs.forEach((d) => mkdirSync(d, { recursive: true }));
 }
 
 async function bootstrap() {
   if (IS_MEDIA_LOCAL) ensureUploadDirs();
 
-  // ✅ rawBody: true は残してOK（Nestが rawBody を保持する設定）
   const app = await NestFactory.create(AppModule, { rawBody: true });
+
+  // ✅ 静的配信（prefixとは独立）
+  // MediaStorageService が返す URL が "/uploads/..." なのでここは "/uploads" で出す
+  if (IS_MEDIA_LOCAL) {
+    app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
+  }
 
   // ✅ prefix
   app.setGlobalPrefix('api');
 
   // ✅ Stripe webhook は raw body 必須
-  // IMPORTANT: prefix込みで指定（/api/stripe/webhook）
   app.use('/api/stripe/webhook', bodyParser.raw({ type: 'application/json' }));
-
-  // もし別ルートもあるなら同様に prefix 込みで
   app.use('/api/payments/webhook', bodyParser.raw({ type: 'application/json' }));
 
-  // ✅ それ以外は通常の JSON（Stripe webhook に当たらないようにする）
+  // ✅ それ以外は通常の JSON
   app.use(bodyParser.json({ limit: '10mb' }));
   app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
