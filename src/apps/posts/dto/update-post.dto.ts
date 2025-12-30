@@ -10,7 +10,7 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { PublishedStatus, Visibility, MediaType } from '@prisma/client';
+import { PostPublishedStatus, PostVisibility, MediaType } from '@prisma/client';
 
 /**
  * メディア更新用 DTO
@@ -61,8 +61,8 @@ export class UpdatePostDto {
   body?: string;
 
   @IsOptional()
-  @IsEnum(Visibility)
-  visibility?: Visibility;
+  @IsEnum(PostVisibility)
+  visibility?: PostVisibility;
 
   @IsOptional()
   @IsInt()
@@ -70,8 +70,8 @@ export class UpdatePostDto {
   priceJpy?: number | null;
 
   @IsOptional()
-  @IsEnum(PublishedStatus)
-  publishedStatus?: PublishedStatus;
+  @IsEnum(PostPublishedStatus)
+  publishedStatus?: PostPublishedStatus;
 
   // ★ 追加：メディア編集用
   @IsOptional()

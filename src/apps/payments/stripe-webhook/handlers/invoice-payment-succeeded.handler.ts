@@ -2,7 +2,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { SubStatus } from '@prisma/client';
+import { SubscriptionStatus } from '@prisma/client';
 import { STRIPE_CLIENT } from '../transfer/stripe-client.provider';
 import { SplitTransferService } from '../transfer/split-transfer.service';
 import { PaymentsWriterService } from '../../writer/payments-writer.service';
@@ -89,14 +89,14 @@ export class InvoicePaymentSucceededHandler {
         return;
       }
 
-      const statusMap: Partial<Record<Stripe.Subscription.Status, SubStatus>> = {
-        active: SubStatus.active,
-        trialing: SubStatus.trialing,
-        past_due: SubStatus.past_due,
-        canceled: SubStatus.canceled,
-        incomplete: SubStatus.incomplete,
-        unpaid: SubStatus.past_due,
-        incomplete_expired: SubStatus.canceled,
+      const statusMap: Partial<Record<Stripe.Subscription.Status, SubscriptionStatus>> = {
+        active: SubscriptionStatus.active,
+        trialing: SubscriptionStatus.trialing,
+        past_due: SubscriptionStatus.past_due,
+        canceled: SubscriptionStatus.canceled,
+        incomplete: SubscriptionStatus.incomplete,
+        unpaid: SubscriptionStatus.past_due,
+        incomplete_expired: SubscriptionStatus.canceled,
       };
 
       const anySub = stripeSub as any;
@@ -111,7 +111,7 @@ export class InvoicePaymentSucceededHandler {
           userId,
           creatorId,
           planId,
-          status: statusMap[stripeSub.status] ?? SubStatus.incomplete,
+          status: statusMap[stripeSub.status] ?? SubscriptionStatus.incomplete,
           currentPeriodStart: periodStart,
           currentPeriodEnd: periodEnd,
           cancelAtPeriodEnd: stripeSub.cancel_at_period_end ?? false,
@@ -121,7 +121,7 @@ export class InvoicePaymentSucceededHandler {
           creatorId,
           planId,
           stripeSubscriptionId: stripeSub.id,
-          status: statusMap[stripeSub.status] ?? SubStatus.incomplete,
+          status: statusMap[stripeSub.status] ?? SubscriptionStatus.incomplete,
           currentPeriodStart: periodStart,
           currentPeriodEnd: periodEnd,
           cancelAtPeriodEnd: stripeSub.cancel_at_period_end ?? false,

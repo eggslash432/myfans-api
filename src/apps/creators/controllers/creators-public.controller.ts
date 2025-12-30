@@ -2,7 +2,7 @@
 
 import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PublishedStatus } from '@prisma/client';
+import { PostPublishedStatus } from '@prisma/client';
 import { ParseUserIdPipe } from '../../../shared/pipes/parse-user-id.pipe';
 
 @Controller('creators')
@@ -22,7 +22,7 @@ export class CreatorsPublicController {
         publicName: true,
         _count: {
           select: {
-            posts: { where: { publishedStatus: PublishedStatus.published } },
+            posts: { where: { publishedStatus: PostPublishedStatus.published } },
           },
         },
       },
@@ -62,7 +62,7 @@ export class CreatorsPublicController {
     const posts = await this.prisma.post.findMany({
       where: {
         creatorId: creator.userId,
-        publishedStatus: PublishedStatus.published,
+        publishedStatus: PostPublishedStatus.published,
       },
       orderBy: { publishedAt: 'desc' },
       take: 20,

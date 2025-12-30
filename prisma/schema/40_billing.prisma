@@ -39,7 +39,7 @@ model Subscription {
   plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
 
   stripeSubscriptionId String @unique
-  status               SubStatus
+  status               SubscriptionStatus
   currentPeriodStart   DateTime
   currentPeriodEnd     DateTime
   cancelAtPeriodEnd    Boolean @default(false)

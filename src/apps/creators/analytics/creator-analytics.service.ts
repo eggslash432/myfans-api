@@ -2,7 +2,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PaymentStatus, Prisma, SubStatus } from '@prisma/client';
+import { PaymentStatus, Prisma, SubscriptionStatus } from '@prisma/client';
 import { endExclusive, parseYmd } from '../creators.utils';
 
 @Injectable()
@@ -173,7 +173,7 @@ export class CreatorAnalyticsService {
           COUNT(*)::bigint AS "cnt"
         FROM "Subscription"
         WHERE "creatorId" = ${userId}
-          AND "status"::text = ${SubStatus.canceled}::text
+          AND "status"::text = ${SubscriptionStatus.canceled}::text
           AND "updatedAt" >= ${from}
           AND "updatedAt" < ${toEx}
         GROUP BY 1

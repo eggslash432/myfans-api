@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { MediaType, Visibility } from '@prisma/client';
+import { MediaType, PostVisibility } from '@prisma/client';
 
 @Injectable()
 export class AccessCheckHelper {
@@ -31,7 +31,7 @@ export class AccessCheckHelper {
     }
 
     // 1. free は誰でも読める
-    if (post.visibility === Visibility.free) {
+    if (post.visibility === PostVisibility.free) {
       return { post, canView: true };
     }
 
@@ -59,10 +59,10 @@ export class AccessCheckHelper {
       access?.expiresAt && access.expiresAt <= new Date();
 
     if (!access || expired) {
-      if (post.visibility === Visibility.plan) {
+      if (post.visibility === PostVisibility.plan) {
         throw new ForbiddenException('プラン購読が必要です');
       }
-      if (post.visibility === Visibility.paid_single) {
+      if (post.visibility === PostVisibility.paid_single) {
         throw new ForbiddenException('PPV購入が必要です');
       }
       throw new ForbiddenException('閲覧権限がありません');
@@ -100,7 +100,7 @@ export class AccessCheckHelper {
     let canViewMain = false;
 
     // free は誰でもOK
-    if (post.visibility === Visibility.free) {
+    if (post.visibility === PostVisibility.free) {
       canViewMain = true;
     } else if (!viewerId) {
       // 未ログインで有料 → canViewMain = false のまま

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PaymentKind, PaymentStatus, Visibility, SubStatus } from '@prisma/client';
+import { PaymentKind, PaymentStatus, PostVisibility, SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from 'src/apps/prisma/prisma.service';
 
 @Injectable()
@@ -44,7 +44,7 @@ export class AccessControlService {
     }
 
     // F) plan 分岐
-    if (post.visibility === Visibility.plan) {
+    if (post.visibility === PostVisibility.plan) {
       if (!post.planId) {
         console.log('[canViewPost:plan] deny (no planId)');
         return false;
@@ -55,7 +55,7 @@ export class AccessControlService {
         where: {
           userId: viewerId,
           planId: post.planId,
-          status: { in: [SubStatus.active, SubStatus.trialing] },
+          status: { in: [SubscriptionStatus.active, SubscriptionStatus.trialing] },
           currentPeriodEnd: { gt: now },
         },
       });
@@ -68,7 +68,7 @@ export class AccessControlService {
     }
 
     // 4) 単品課金 (PPV)
-    if (post.visibility === Visibility.paid_single) {
+    if (post.visibility === PostVisibility.paid_single) {
       const access = await this.prisma.postAccess.findUnique({
         where: {
           userId_postId: {

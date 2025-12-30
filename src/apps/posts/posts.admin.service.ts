@@ -2,7 +2,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { PublishedStatus } from '@prisma/client';
+import { PostPublishedStatus } from '@prisma/client';
 
 @Injectable()
 export class PostsAdminService {
@@ -11,7 +11,7 @@ export class PostsAdminService {
   async getAdminPosts(limit = 5) {
     return await this.prisma.post.findMany({
       where: {
-        publishedStatus: PublishedStatus.published,
+        publishedStatus: PostPublishedStatus.published,
         isOfficial: true,
       },
       orderBy: { publishedAt: 'desc' },

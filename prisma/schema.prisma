@@ -51,13 +51,13 @@ enum KycStatus {
 // ==============================
 // 投稿・公開制御
 // ==============================
-enum PublishedStatus {
+enum PostPublishedStatus {
   draft
   published
   private
 }
 
-enum Visibility {
+enum PostVisibility {
   free
   plan
   paid_single
@@ -104,12 +104,15 @@ enum PayoutTargetType {
   SHOP
 }
 
-enum SubStatus {
-  active
+enum SubscriptionStatus {
   trialing
+  active
   past_due
-  incomplete
+  unpaid
   canceled
+  incomplete
+  incomplete_expired
+  paused
 }
 
 // ==============================
@@ -378,7 +381,7 @@ model Subscription {
   plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
 
   stripeSubscriptionId String @unique
-  status               SubStatus
+  status               SubscriptionStatus
   currentPeriodStart   DateTime
   currentPeriodEnd     DateTime
   cancelAtPeriodEnd    Boolean @default(false)
@@ -493,18 +496,18 @@ model Post {
   planId    String?
   genreId   String?
 
-  creator Creator? @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
-  plan    Plan?    @relation(fields: [planId], references: [id])
+  creator         Creator? @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
+  plan            Plan?    @relation(fields: [planId], references: [id])
 
-  title      String
-  body       String?
-  visibility Visibility
-  ageRating  AgeRating @default(all)
+  title           String
+  body            String?
+  visibility      PostVisibility @default(free)
+  ageRating       AgeRating @default(all)
 
-  priceJpy        Int?
-  isOfficial      Boolean @default(false)
-  publishedStatus PublishedStatus @default(draft)
-  publishedAt     DateTime?
+  priceJpy             Int?
+  isOfficial           Boolean @default(false)
+  publishedStatus      PostPublishedStatus @default(draft)
+  publishedAt          DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

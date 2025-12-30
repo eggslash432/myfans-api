@@ -1,5 +1,5 @@
 // api/src/apps/creators/dto/create-creator.dto.ts
-import { AgeRating, PublishedStatus, Visibility } from '@prisma/client';
+import { AgeRating, PostPublishedStatus, PostVisibility } from '@prisma/client';
 import { IsString, IsOptional, IsObject } from 'class-validator';
 
 export class CreateCreatorDto {
@@ -26,4 +26,4 @@ export class CreateCreatorDto {
   kycDocuments?: Record<string, any>;
 }
 
-export {Visibility, AgeRating, PublishedStatus};
+export {PostVisibility, AgeRating, PostPublishedStatus};

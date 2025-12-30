@@ -12,7 +12,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminOnlyGuard } from '../access-control/admin-only.guard';
-import { PublishedStatus } from '@prisma/client';
+import { PostPublishedStatus } from '@prisma/client';
 import {
   isMediaOnS3,
   extractS3KeyFromMediaUrl,
@@ -82,10 +82,10 @@ export class AdminPostsController {
   @Patch(':id/status')
   async updateStatus(
     @Param('id') id: string,
-    @Body() body: { status: PublishedStatus },
+    @Body() body: { status: PostPublishedStatus },
   ) {
     const { status } = body;
-    const allowed = Object.values(PublishedStatus);
+    const allowed = Object.values(PostPublishedStatus);
     if (!allowed.includes(status)) {
       throw new BadRequestException('invalid status');
     }

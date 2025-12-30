@@ -2,7 +2,7 @@
 
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { MediaType, PublishedStatus, Role, Visibility } from '@prisma/client';
+import { MediaType, PostPublishedStatus, Role, PostVisibility } from '@prisma/client';
 import { getCreatorByUserIdOrThrow, isAdminRole } from './posts.authz';
 
 @Injectable()
@@ -25,17 +25,17 @@ export class PostsCreatorService {
     const isOfficial = isAdminRole(user?.role ?? null);
 
     // ✅ 運営は無料公式だけ（現行ルール踏襲）
-    if (isOfficial && visibility !== Visibility.free) {
+    if (isOfficial && visibility !== PostVisibility.free) {
       throw new ForbiddenException('管理者は無料投稿のみ作成できます');
     }
 
     // plan投稿なのにplanIdがない → エラー
-    if (visibility === Visibility.plan && !planId) {
+    if (visibility === PostVisibility.plan && !planId) {
       throw new ForbiddenException('planId が必要です');
     }
 
     // PPV なのに price がない → エラー
-    if (visibility === Visibility.paid_single && !priceJpy) {
+    if (visibility === PostVisibility.paid_single && !priceJpy) {
       throw new ForbiddenException('価格を設定してください');
     }
 
@@ -53,7 +53,7 @@ export class PostsCreatorService {
         visibility,
         planId: planId || null,
         priceJpy: priceJpy || null,
-        publishedStatus: PublishedStatus.published,
+        publishedStatus: PostPublishedStatus.published,
         isOfficial,
       },
     });

@@ -20,7 +20,7 @@ import { CreatorsService } from '../creators.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateCreatorProfileDto } from '../dto/update-creator-profile.dto';
 import { CreatePostDto } from '../../posts/dto/create-post.dto';
-import { PublishedStatus, Visibility } from '@prisma/client';
+import { PostPublishedStatus, PostVisibility } from '@prisma/client';
 
 import { FileInterceptor } from '@nestjs/platform-express';
 import { extname } from 'path';
@@ -122,10 +122,10 @@ export class CreatorsMeController {
     const creator = await this.helpers.requireCreatorApprovedOrAdmin(req);
 
     // 以降そのまま
-    if (dto.visibility === Visibility.plan) {
+    if (dto.visibility === PostVisibility.plan) {
       if (!(dto as any).planId) throw new BadRequestException('planId が必要です');
     }
-    if (dto.visibility === Visibility.paid_single) {
+    if (dto.visibility === PostVisibility.paid_single) {
       if (!dto.priceJpy) throw new BadRequestException('PPV は priceJpy が必要です');
     }
 
@@ -136,10 +136,10 @@ export class CreatorsMeController {
 
     const publishedStatus =
       status === 'PUBLISHED'
-        ? PublishedStatus.published
+        ? PostPublishedStatus.published
         : status === 'PRIVATE'
-        ? PublishedStatus.private
-        : PublishedStatus.draft;
+        ? PostPublishedStatus.private
+        : PostPublishedStatus.draft;
 
     const post = await this.prisma.post.create({
       data: {
@@ -151,7 +151,7 @@ export class CreatorsMeController {
         priceJpy: dto.priceJpy ?? null,
         publishedStatus,
         publishedAt:
-          publishedStatus === PublishedStatus.published ? new Date() : null,
+          publishedStatus === PostPublishedStatus.published ? new Date() : null,
       },
     });
 

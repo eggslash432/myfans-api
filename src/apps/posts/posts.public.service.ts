@@ -2,7 +2,7 @@
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { PublishedStatus, SubStatus, Visibility } from '@prisma/client';
+import { PostPublishedStatus, SubscriptionStatus, PostVisibility } from '@prisma/client';
 
 @Injectable()
 export class PostsPublicService {
@@ -21,23 +21,23 @@ export class PostsPublicService {
 
     let canViewMain = false;
 
-    if (post.visibility === Visibility.free) {
+    if (post.visibility === PostVisibility.free) {
       canViewMain = true;
     } else if (viewerId && post.creatorId === viewerId) {
       // ⚠️ここは post.creatorId が creator.id の場合ズレるので注意
       // 「投稿者本人常に閲覧可」にしたいなら viewerId から creatorId を引いて比較する必要あり
       canViewMain = true;
-    } else if (viewerId && post.visibility === Visibility.plan) {
+    } else if (viewerId && post.visibility === PostVisibility.plan) {
       const activeSub = await this.prisma.subscription.findFirst({
         where: {
           userId: viewerId ?? undefined,
           creatorId: post.creatorId ?? undefined,
-          status: SubStatus.active,
+          status: SubscriptionStatus.active,
           currentPeriodEnd: { gt: new Date() },
         },
       });
       if (activeSub) canViewMain = true;
-    } else if (viewerId && post.visibility === Visibility.paid_single) {
+    } else if (viewerId && post.visibility === PostVisibility.paid_single) {
       const access = await this.prisma.postAccess.findUnique({
         where: { userId_postId: { userId: viewerId, postId } },
       });
@@ -60,7 +60,7 @@ export class PostsPublicService {
 
   async getPublicFeed() {
     return await this.prisma.post.findMany({
-      where: { publishedStatus: PublishedStatus.published },
+      where: { publishedStatus: PostPublishedStatus.published },
       orderBy: { publishedAt: 'desc' },
       include: {
         creator: { select: { publicName: true } },
@@ -85,7 +85,7 @@ export class PostsPublicService {
       where: {
         genreId,
         publishedStatus: 'published',
-        visibility: Visibility.free,
+        visibility: PostVisibility.free,
       },
       orderBy: { publishedAt: 'desc' },
       take: 50,

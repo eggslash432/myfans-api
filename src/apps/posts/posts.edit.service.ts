@@ -2,7 +2,7 @@
 
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { MediaType, PublishedStatus, Visibility } from '@prisma/client';
+import { MediaType, PostPublishedStatus, PostVisibility } from '@prisma/client';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { getCreatorByUserIdOrThrow } from './posts.authz';
 
@@ -37,17 +37,17 @@ export class PostsEditService {
     if (!post) throw new NotFoundException('投稿が見つかりません');
     if (post.creatorId !== myCreatorId) throw new ForbiddenException('この投稿は編集できません');
 
-    const wasPublished = post.publishedStatus === PublishedStatus.published;
+    const wasPublished = post.publishedStatus === PostPublishedStatus.published;
 
     const data: any = {};
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.body !== undefined) data.body = dto.body;
 
     if (dto.publishedStatus !== undefined) {
-      const next = dto.publishedStatus as PublishedStatus;
+      const next = dto.publishedStatus as PostPublishedStatus;
 
       let nextPublishedAt = post.publishedAt;
-      const willBePublished = next === PublishedStatus.published;
+      const willBePublished = next === PostPublishedStatus.published;
 
       if (!wasPublished && willBePublished) nextPublishedAt = new Date();
       if (wasPublished && !willBePublished) nextPublishedAt = null;
@@ -77,23 +77,23 @@ export class PostsEditService {
     // 下書き/非公開は販売条件も編集可
     if (dto.visibility !== undefined) data.visibility = dto.visibility;
 
-    const nextVisibility = (dto.visibility ?? post.visibility) as Visibility;
+    const nextVisibility = (dto.visibility ?? post.visibility) as PostVisibility;
 
-    if (nextVisibility === Visibility.plan) {
+    if (nextVisibility === PostVisibility.plan) {
       const nextPlanId = (dto as any).planId ?? post.planId;
       if (!nextPlanId) throw new ForbiddenException('planId が必要です');
       data.planId = nextPlanId;
       data.priceJpy = null;
     }
 
-    if (nextVisibility === Visibility.paid_single) {
+    if (nextVisibility === PostVisibility.paid_single) {
       const nextPrice = dto.priceJpy ?? post.priceJpy;
       if (!nextPrice) throw new ForbiddenException('価格を設定してください');
       data.priceJpy = nextPrice;
       data.planId = null;
     }
 
-    if (nextVisibility === Visibility.free) {
+    if (nextVisibility === PostVisibility.free) {
       data.planId = null;
       data.priceJpy = null;
     }

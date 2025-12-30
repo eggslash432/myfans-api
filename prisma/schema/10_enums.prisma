@@ -35,13 +35,13 @@ enum KycStatus {
 // ==============================
 // 投稿・公開制御
 // ==============================
-enum PublishedStatus {
+enum PostPublishedStatus {
   draft
   published
   private
 }
 
-enum Visibility {
+enum PostVisibility {
   free
   plan
   paid_single
@@ -88,12 +88,15 @@ enum PayoutTargetType {
   SHOP
 }
 
-enum SubStatus {
-  active
+enum SubscriptionStatus {
   trialing
+  active
   past_due
-  incomplete
+  unpaid
   canceled
+  incomplete
+  incomplete_expired
+  paused
 }
 
 // ==============================

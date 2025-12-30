@@ -4,7 +4,7 @@ import type { Request } from 'express';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { CreatorApprovalStatus, SubStatus, TransferKind } from '@prisma/client';
+import { CreatorApprovalStatus, SubscriptionStatus, TransferKind } from '@prisma/client';
 import { ShopAuthService } from './shop-auth.service';
 import { startOfMonthLocal, startOfTodayLocal } from './shop-utils';
 
@@ -58,7 +58,7 @@ export class ShopDashboardController {
       // アクティブ購読者（クリエイターが所属するshopの分）
       this.prisma.subscription.findMany({
         where: {
-          status: { in: [SubStatus.active, SubStatus.trialing] },
+          status: { in: [SubscriptionStatus.active, SubscriptionStatus.trialing] },
           creator: { shopId },
         },
         distinct: ['userId'],

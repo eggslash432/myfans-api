@@ -2,7 +2,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { SubStatus } from '@prisma/client';
+import { SubscriptionStatus } from '@prisma/client';
 
 @Injectable()
 export class SubscriptionHandler {
@@ -34,17 +34,17 @@ export class SubscriptionHandler {
       return;
     }
 
-    const statusMap: Partial<Record<Stripe.Subscription.Status, SubStatus>> = {
-      active: SubStatus.active,
-      trialing: SubStatus.trialing,
-      past_due: SubStatus.past_due,
-      canceled: SubStatus.canceled,
-      incomplete: SubStatus.incomplete,
-      unpaid: SubStatus.past_due,
-      incomplete_expired: SubStatus.canceled,
+    const statusMap: Partial<Record<Stripe.Subscription.Status, SubscriptionStatus>> = {
+      active: SubscriptionStatus.active,
+      trialing: SubscriptionStatus.trialing,
+      past_due: SubscriptionStatus.past_due,
+      canceled: SubscriptionStatus.canceled,
+      incomplete: SubscriptionStatus.incomplete,
+      unpaid: SubscriptionStatus.past_due,
+      incomplete_expired: SubscriptionStatus.canceled,
     };
 
-    const subStatus: SubStatus = statusMap[sub.status] ?? SubStatus.incomplete;
+    const subStatus: SubscriptionStatus = statusMap[sub.status] ?? SubscriptionStatus.incomplete;
 
     const anySub = sub as any;
     const periodStartSec: number = anySub.current_period_start ?? 0;

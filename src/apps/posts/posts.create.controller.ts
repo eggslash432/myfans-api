@@ -11,7 +11,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostDto } from './dto/create-post.dto';
-import { PublishedStatus, Role, Visibility, CreatorApprovalStatus } from '@prisma/client';
+import { PostPublishedStatus, Role, PostVisibility, CreatorApprovalStatus } from '@prisma/client';
 import { UserJwt } from 'src/shared/types';
 import { CreatorHelper } from '../helpers/creator.helper';
 
@@ -58,39 +58,39 @@ export class PostsCreateController {
     const creatorId: string | null = isAdmin ? null : creator!.userId;
 
     // 🔥 運営投稿は無料固定
-    const visibility: Visibility = isAdmin ? Visibility.free : dto.visibility;
+    const visibility: PostVisibility = isAdmin ? PostVisibility.free : dto.visibility;
 
     const planId: string | null =
       isAdmin
         ? null
-        : dto.visibility === Visibility.plan
+        : dto.visibility === PostVisibility.plan
         ? dto.planId ?? null
         : null;
 
     const priceJpy: number | null =
       isAdmin
         ? null
-        : dto.visibility === Visibility.paid_single
+        : dto.visibility === PostVisibility.paid_single
         ? dto.priceJpy ?? null
         : null;
 
-    const toPublishedStatus = (v: unknown): PublishedStatus => {
+    const toPublishedStatus = (v: unknown): PostPublishedStatus => {
       if (typeof v === 'boolean') {
-        return v ? PublishedStatus.published : PublishedStatus.draft;
+        return v ? PostPublishedStatus.published : PostPublishedStatus.draft;
       }
       if (typeof v === 'string') {
         const s = v.toLowerCase();
-        if (s === 'published') return PublishedStatus.published;
-        if (s === 'private') return PublishedStatus.private;
-        return PublishedStatus.draft;
+        if (s === 'published') return PostPublishedStatus.published;
+        if (s === 'private') return PostPublishedStatus.private;
+        return PostPublishedStatus.draft;
       }
-      return PublishedStatus.draft;
+      return PostPublishedStatus.draft;
     };
 
     const pub = toPublishedStatus(
       (dto as any).publishedStatus ?? (dto as any).status,
     );
-    const pubAt = pub === PublishedStatus.published ? new Date() : null;
+    const pubAt = pub === PostPublishedStatus.published ? new Date() : null;
 
     const post = await this.prisma.post.create({
       data: {
