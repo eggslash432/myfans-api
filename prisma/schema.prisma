@@ -167,6 +167,72 @@ enum PlanModalMode {
   edit
 }
 
+// ==============================
+// FAQ/規約
+// ==============================
+enum LegalDocumentType {
+  terms
+  privacy
+  guideline
+  other
+}
+
+// ==============================
+// NGワード
+// ==============================
+enum NgWordKind {
+  sexual
+  illegal
+  pii
+  other
+}
+
+enum NgWordSeverity {
+  low
+  medium
+  high
+}
+
+// ==============================
+// AIモデレーション
+// ==============================
+enum ModerationTargetType {
+  post_text
+  post_media
+}
+
+enum ModerationDecision {
+  allow
+  review
+  reject
+}
+
+// 投稿の審査状態（D-3/D-4の中核）
+enum ReviewStatus {
+  none
+  pending_review
+  approved
+  held
+  rejected
+}
+
+// ==============================
+// 営業許可書
+// ==============================
+enum BusinessLicenseStatus {
+  pending
+  approved
+  rejected
+}
+
+// ==============================
+// ヘルプ
+// ==============================
+enum HelpCategory {
+  GUIDE
+  FAQ
+}
+
 // ===== 20_user.prisma =====
 //api/prisma/schema/20_user.prisma
 
@@ -192,6 +258,10 @@ model User {
   favorites     Favorite[]
   reports       Report[]
   notifications Notification[]
+  // 規約同意履歴
+  agreements           UserAgreement[]
+  // 通知のON/OFF設定
+  notificationSettings NotificationSetting[]  
 
   shopMembers    ShopMember[] 
 
@@ -297,6 +367,12 @@ model Shop {
   id              String @id @default(uuid())
   name            String
   stripeAccountId String?
+
+  // 営業許可書（D-5/D-7）
+  businessLicenseFileKey   String?
+  businessLicenseStatus    BusinessLicenseStatus @default(pending)
+  businessLicenseCheckedAt DateTime?
+  businessLicenseCheckedBy String? // adminのuserId等を入れる想定（relation化は後でOK）  
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -494,7 +570,7 @@ model Post {
   id        String @id @default(uuid())
   creatorId String?
   planId    String?
-  genreId   String?
+  genres    PostGenre[]
 
   creator         Creator? @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
   plan            Plan?    @relation(fields: [planId], references: [id])
@@ -508,6 +584,11 @@ model Post {
   isOfficial           Boolean @default(false)
   publishedStatus      PostPublishedStatus @default(draft)
   publishedAt          DateTime?
+  // 審査状態（D-3/D-4）
+  reviewStatus ReviewStatus @default(none)
+
+  // AI一次判定の履歴（任意：一覧で取ると楽）
+  moderationResults ModerationResult[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -520,6 +601,28 @@ model Post {
   @@index([creatorId, publishedStatus])
   @@index([visibility, planId])
   @@index([publishedAt])
+}
+
+model Genre {
+  id        String @id @default(cuid())
+  name      String
+  sortOrder Int    @default(0)
+  isActive  Boolean @default(true)
+
+  posts     PostGenre[]
+}
+
+model PostGenre {
+  postId    String
+  genreId   String
+  sortOrder Int @default(0)
+
+  post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([postId, genreId])
+  @@index([genreId])
+  @@index([postId])
 }
 
 model PostMedia {
@@ -554,6 +657,146 @@ model UploadSetting {
   maxFileSizeMb Int @default(200)
   maxFiles      Int @default(10)
   updatedAt     DateTime @updatedAt
+}
+
+// ===== 55_help.prisma =====
+// api/prisma/schema/55_help.prisma
+
+/// FAQ/ガイド記事（C-4/C-5）
+model HelpArticle {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  body        String
+  category    HelpCategory
+  order       Int      @default(0)
+  isPublished Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished, category, order])
+  @@index([category, order])
+}
+
+model SitePage {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  body      String   @db.Text
+  published Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+// ===== 56_legal.prisma =====
+// api/prisma/schema/56_legal.prisma
+
+/// 規約本文（版管理）
+model LegalDocument {
+  id          String            @id @default(cuid())
+  type        LegalDocumentType
+  version     Int
+  title       String
+  body        String
+  publishedAt DateTime?
+
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  agreements  UserAgreement[]
+
+  @@unique([type, version])
+  @@index([type, publishedAt])
+}
+
+/// 同意履歴（D-6）
+model UserAgreement {
+  id          String            @id @default(cuid())
+
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  documentId  String
+  document    LegalDocument     @relation(fields: [documentId], references: [id], onDelete: Restrict)
+
+  // 同意時点の版を複製保持（後から文面が増えても説明できる）
+  type        LegalDocumentType
+  version     Int
+
+  agreedAt    DateTime          @default(now())
+  ip          String?
+  userAgent   String?
+
+  @@index([userId, agreedAt])
+  @@index([type, version])
+  @@index([documentId])
+}
+
+// ===== 57_compliance.prisma =====
+// api/prisma/schema/57_compliance.prisma
+
+/// NGワード（D-1）
+model NgWord {
+  id        String         @id @default(cuid())
+  word      String
+  kind      NgWordKind
+  severity  NgWordSeverity @default(medium)
+  isEnabled Boolean        @default(true)
+
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([isEnabled, kind, severity])
+  @@unique([word, kind])
+}
+
+// ===== 58_moderation.prisma =====
+// api/prisma/schema/58_moderation.prisma
+
+/// AI一次判定の結果保持（D-2）
+model ModerationResult {
+  id          String               @id @default(cuid())
+
+  targetType  ModerationTargetType
+  targetId    String               // postId / mediaId 等
+
+  // Post連携（最短用）
+  postId      String?
+  post        Post?                @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  provider    String               @default("OPENAI")
+  decision    ModerationDecision
+  reasons     String?              // 簡易理由（要約）
+  raw         Json                 // Providerレスポンスをそのまま
+
+  createdAt   DateTime             @default(now())
+
+  @@index([targetType, targetId, createdAt])
+  @@index([postId, createdAt])
+  @@index([decision, createdAt])
+}
+
+// ===== 59_notification_setting.prisma =====
+// api/prisma/schema/59_notification_setting.prisma
+
+/// 通知設定（A-6）
+model NotificationSetting {
+  id            String   @id @default(cuid())
+
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type          NotificationType
+
+  inAppEnabled  Boolean  @default(true)
+  emailEnabled  Boolean  @default(false)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, type])
+  @@index([userId])
 }
 
 // ===== 60_community.prisma =====
@@ -645,11 +888,20 @@ model SiteAnnouncement {
 
 model AuditLog {
   id        Int      @id @default(autoincrement())
-  actorId  String   // 管理者ID
-  action   String   // USER_FREEZE / POST_DELETE 等
-  target   String?  // user:xxx / post:yyy
+
+  actorId   String           // 既存
+  actorRole String?          // ★ 追加：admin / sub_admin / shop_admin
+
+  action    String           // 既存
+  target    String?          // 既存（互換性維持）
+
+  targetType String?         // ★ 追加：User / Post / Creator / Payout
+  targetId   String?         // ★ 追加：UUIDやID（Stringで統一）
+
   meta     Json?
   ip       String?
+  userAgent String?          // ★ 追加
+
   createdAt DateTime @default(now())
 }
 
@@ -660,6 +912,35 @@ model AccessLog {
   ip       String?
   ua       String?
   createdAt DateTime @default(now())
+}
+
+model ErrorLog {
+  id        Int      @id @default(autoincrement())
+  level     String   @default("error") // error / warn など
+  message   String
+  name      String?
+  stack     String?
+
+  statusCode Int?
+  method    String?
+  path      String?
+
+  // 誰のリクエストか（取れる範囲で）
+  userId    String?
+  role      Role?
+
+  ip        String?
+  userAgent String?
+
+  // request/responseの補足（マスクした上で入れる）
+  meta      Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([statusCode])
+  @@index([userId])
+  @@index([path])
 }
 
 // ===== 70_settlement.prisma =====

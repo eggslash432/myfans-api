@@ -6,8 +6,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreatorApprovalStatus } from '@prisma/client';
 import { ShopAuthService } from './shop-auth.service';
+import { ShopLicenseApprovedGuard } from '../access-control/shop-license-approved.guard';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ShopLicenseApprovedGuard)
 @Controller()
 export class ShopCreatorApplicationsController {
   constructor(

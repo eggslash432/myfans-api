@@ -10,10 +10,41 @@ CREATE TYPE "NotificationType" AS ENUM ('SYSTEM', 'PAYMENT', 'KYC', 'REPORT', 'P
 -- CreateEnum
 CREATE TYPE "NotificationSource" AS ENUM ('SYSTEM', 'ADMIN', 'WEBHOOK');
 
--- AlterTable
-ALTER TABLE "Notification" ADD COLUMN     "source" "NotificationSource",
-DROP COLUMN "type",
-ADD COLUMN     "type" "NotificationType" NOT NULL;
+-- 1) source 追加（既存行に値が必要ならデフォルト埋めも）
+ALTER TABLE "Notification"
+  ADD COLUMN "source" "NotificationSource";
+
+-- 2) 新しい type カラムを一旦 nullable で追加
+ALTER TABLE "Notification"
+  ADD COLUMN "type_new" "NotificationType";
+
+-- 3) 既存 TEXT の type から enum へマイグレーション
+--    既存データ: 'creator_approved' などが入ってるので、適当にマッピングする。
+UPDATE "Notification"
+SET "type_new" =
+  CASE
+    WHEN "type" IN ('payment_succeeded', 'payment', 'paid') THEN 'PAYMENT'::"NotificationType"
+    WHEN "type" IN ('kyc', 'kyc_submitted', 'kyc_approved', 'kyc_rejected') THEN 'KYC'::"NotificationType"
+    WHEN "type" IN ('report', 'reported') THEN 'REPORT'::"NotificationType"
+    WHEN "type" IN ('post', 'post_published') THEN 'POST'::"NotificationType"
+    WHEN "type" IN ('announcement') THEN 'ANNOUNCEMENT'::"NotificationType"
+    -- あなたの現状値: creator_approved は SYSTEM 扱いに寄せる（必要なら POST に変えてもOK）
+    WHEN "type" IN ('creator_approved', 'creator_rejected') THEN 'SYSTEM'::"NotificationType"
+    ELSE 'SYSTEM'::"NotificationType"
+  END
+WHERE "type_new" IS NULL;
+
+-- 4) NULL が残ってないことを保証してから NOT NULL 制約
+ALTER TABLE "Notification"
+  ALTER COLUMN "type_new" SET NOT NULL;
+
+-- 5) 旧カラムを落としてリネーム
+ALTER TABLE "Notification"
+  DROP COLUMN "type";
+
+ALTER TABLE "Notification"
+  RENAME COLUMN "type_new" TO "type";
+
 
 -- CreateTable
 CREATE TABLE "SiteAnnouncement" (

@@ -10,7 +10,9 @@ import cookieParser from 'cookie-parser';
 import { join } from 'path';
 import { mkdirSync } from 'fs';
 import { IS_MEDIA_LOCAL } from 'src/shared/media-env';
-import * as express from 'express'; // ✅ 追加
+import * as express from 'express'; 
+import { ErrorLogService } from '../error-log/error-log.service';
+import { HttpErrorLogFilter } from '../error-log/http-exception.filter';
 
 function ensureUploadDirs() {
   const dirs = [
@@ -69,6 +71,9 @@ async function bootstrap() {
     .build();
   const doc = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('docs', app, doc);
+
+  const errorLog = app.get(ErrorLogService);
+  app.useGlobalFilters(new HttpErrorLogFilter(errorLog));  
 
   await app.listen(process.env.PORT || 3000);
 }

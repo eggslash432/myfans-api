@@ -86,11 +86,20 @@ model SiteAnnouncement {
 
 model AuditLog {
   id        Int      @id @default(autoincrement())
-  actorId  String   // 管理者ID
-  action   String   // USER_FREEZE / POST_DELETE 等
-  target   String?  // user:xxx / post:yyy
+
+  actorId   String           // 既存
+  actorRole String?          // ★ 追加：admin / sub_admin / shop_admin
+
+  action    String           // 既存
+  target    String?          // 既存（互換性維持）
+
+  targetType String?         // ★ 追加：User / Post / Creator / Payout
+  targetId   String?         // ★ 追加：UUIDやID（Stringで統一）
+
   meta     Json?
   ip       String?
+  userAgent String?          // ★ 追加
+
   createdAt DateTime @default(now())
 }
 
@@ -102,3 +111,34 @@ model AccessLog {
   ua       String?
   createdAt DateTime @default(now())
 }
+
+model ErrorLog {
+  id        Int      @id @default(autoincrement())
+  level     String   @default("error") // error / warn など
+  message   String
+  name      String?
+  stack     String?
+
+  statusCode Int?
+  method    String?
+  path      String?
+
+  // 誰のリクエストか（取れる範囲で）
+  userId    String?
+  role      Role?
+
+  ip        String?
+  userAgent String?
+
+  // request/responseの補足（マスクした上で入れる）
+  meta      Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([statusCode])
+  @@index([userId])
+  @@index([path])
+}
+
+

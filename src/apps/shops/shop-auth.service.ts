@@ -12,9 +12,22 @@ import { ShopMemberRole, Role } from '@prisma/client';
 export class ShopAuthService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * ✅ JWTから userId を安全に取り出す
+   * - guard実装差分で payload のキーが揺れがちなので吸収する
+   */
   requireUserId(req: Request): string {
-    const userId = String((req as any).user?.id ?? '');
-    if (!userId) throw new UnauthorizedException('ログイン情報が取得できません');
+    const u = (req as any).user ?? {};
+
+    // よくある候補：id / userId / sub
+    const raw = u.id ?? u.userId ?? u.sub;
+
+    const userId = typeof raw === 'string' ? raw : String(raw ?? '');
+
+    // "undefined" / "null" など文字列化事故も弾く
+    if (!userId || userId === 'undefined' || userId === 'null') {
+      throw new UnauthorizedException('ログイン情報が取得できません');
+    }
     return userId;
   }
 
@@ -26,15 +39,17 @@ export class ShopAuthService {
   async assertPlatformAdminOrThrow(req: Request): Promise<{ userId: string }> {
     const userId = this.requireUserId(req);
 
-    const jwtRole = (req as any).user?.role as Role | string | undefined;
+    const u = (req as any).user ?? {};
+    const jwtRole = (u.role ?? u.userRole) as Role | string | undefined;
+
     if (jwtRole === 'admin') return { userId };
 
-    const u = await this.prisma.user.findUnique({
+    const dbUser = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { role: true },
     });
 
-    if (u?.role !== Role.admin) {
+    if (dbUser?.role !== Role.admin) {
       throw new ForbiddenException('運営管理者のみ実行できます');
     }
 
@@ -73,7 +88,9 @@ export class ShopAuthService {
     roles?: ShopMemberRole[],
   ) {
     const me = await this.getMyShopMemberOrThrow(req, roles);
-    if (me.shopId !== shopId) throw new ForbiddenException('他のShopにはアクセスできません');
+    if (me.shopId !== shopId) {
+      throw new ForbiddenException('他のShopにはアクセスできません');
+    }
     return me;
   }
 }

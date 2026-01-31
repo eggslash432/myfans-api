@@ -18,6 +18,10 @@ import { IS_MEDIA_LOCAL } from 'src/shared/media-env';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { ShopsModule } from '../shops/shops.module';
 import { AnnouncementsModule } from '../announcements/announcements.module';
+import { ErrorLogModule } from '../error-log/error-log.module';
+import { LegalModule } from '../legal/legal.module';
+import { BusinessLicenseModule } from '../shops/business-license.module';
+import { HelpModule } from '../help/help.module';
 
 @Module({
   imports: [
@@ -50,6 +54,10 @@ import { AnnouncementsModule } from '../announcements/announcements.module';
     SubscriptionsModule,
     ShopsModule,
     AnnouncementsModule,
+    ErrorLogModule,
+    HelpModule,
+    LegalModule,
+    BusinessLicenseModule,  
   ],
   providers: [
     AppService,

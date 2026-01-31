@@ -15,8 +15,9 @@ import { Prisma } from '@prisma/client';
 import { ShopAuthService } from './shop-auth.service';
 import { SalesSummaryRes } from 'src/shared/types';
 import { startOfMonthLocal, startOfTodayLocal } from './shop-utils';
+import { ShopLicenseApprovedGuard } from '../access-control/shop-license-approved.guard';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ShopLicenseApprovedGuard)
 @Controller()
 export class ShopSalesController {
   constructor(

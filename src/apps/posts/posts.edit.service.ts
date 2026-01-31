@@ -2,7 +2,7 @@
 
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { MediaType, PostPublishedStatus, PostVisibility } from '@prisma/client';
+import { MediaType, PostPublishedStatus, PostVisibility, Prisma } from '@prisma/client';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { getCreatorByUserIdOrThrow } from './posts.authz';
 
@@ -35,20 +35,26 @@ export class PostsEditService {
     });
 
     if (!post) throw new NotFoundException('投稿が見つかりません');
-    if (post.creatorId !== myCreatorId) throw new ForbiddenException('この投稿は編集できません');
+    if (post.creatorId !== myCreatorId)
+      throw new ForbiddenException('この投稿は編集できません');
 
-    const wasPublished = post.publishedStatus === PostPublishedStatus.published;
+    const wasPublished =
+      post.publishedStatus === PostPublishedStatus.published;
 
-    const data: any = {};
+    /**
+     * ===== Post 本体の更新データ =====
+     */
+    const data: Prisma.PostUncheckedUpdateInput = {};
+
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.body !== undefined) data.body = dto.body;
 
+    // ---- 公開状態の変更 ----
     if (dto.publishedStatus !== undefined) {
       const next = dto.publishedStatus as PostPublishedStatus;
-
-      let nextPublishedAt = post.publishedAt;
       const willBePublished = next === PostPublishedStatus.published;
 
+      let nextPublishedAt = post.publishedAt;
       if (!wasPublished && willBePublished) nextPublishedAt = new Date();
       if (wasPublished && !willBePublished) nextPublishedAt = null;
 
@@ -56,8 +62,95 @@ export class PostsEditService {
       data.publishedAt = nextPublishedAt;
     }
 
+    /**
+     * ===== 公開済み投稿の制限 =====
+     * - visibility / planId / priceJpy は変更不可
+     * - title / body / genre は OK
+     */
     if (wasPublished) {
-      return await this.prisma.post.update({
+      return this.prisma.$transaction(async (tx) => {
+        // ジャンル更新（公開済みでもOK）
+        if (dto.genreIds !== undefined) {
+          await tx.postGenre.deleteMany({ where: { postId } });
+          if (dto.genreIds.length > 0) {
+            await tx.postGenre.createMany({
+              data: dto.genreIds.map((genreId) => ({
+                postId,
+                genreId,
+              })),
+              skipDuplicates: true,
+            });
+          }
+        }
+
+        return tx.post.update({
+          where: { id: postId },
+          data,
+          select: {
+            id: true,
+            title: true,
+            body: true,
+            visibility: true,
+            planId: true,
+            priceJpy: true,
+            publishedStatus: true,
+            publishedAt: true,
+            createdAt: true,
+          },
+        });
+      });
+    }
+
+    /**
+     * ===== 下書き / 非公開：販売条件も編集可能 =====
+     */
+
+    if (dto.visibility !== undefined) data.visibility = dto.visibility;
+
+    const nextVisibility = (dto.visibility ?? post.visibility) as PostVisibility;
+
+    if (nextVisibility === PostVisibility.plan) {
+      const nextPlanId = dto.planId ?? post.planId;
+      if (!nextPlanId)
+        throw new ForbiddenException('planId が必要です');
+
+      data.planId = nextPlanId;
+      data.priceJpy = null;
+    }
+
+    if (nextVisibility === PostVisibility.paid_single) {
+      const nextPrice = dto.priceJpy ?? post.priceJpy;
+      if (!nextPrice)
+        throw new ForbiddenException('価格を設定してください');
+
+      data.priceJpy = nextPrice;
+      data.planId = null;
+    }
+
+    if (nextVisibility === PostVisibility.free) {
+      data.planId = null;
+      data.priceJpy = null;
+    }
+
+    /**
+     * ===== トランザクションで更新 =====
+     */
+    return this.prisma.$transaction(async (tx) => {
+      // ジャンル更新
+      if (dto.genreIds !== undefined) {
+        await tx.postGenre.deleteMany({ where: { postId } });
+        if (dto.genreIds.length > 0) {
+          await tx.postGenre.createMany({
+            data: dto.genreIds.map((genreId) => ({
+              postId,
+              genreId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
+      return tx.post.update({
         where: { id: postId },
         data,
         select: {
@@ -72,46 +165,6 @@ export class PostsEditService {
           createdAt: true,
         },
       });
-    }
-
-    // 下書き/非公開は販売条件も編集可
-    if (dto.visibility !== undefined) data.visibility = dto.visibility;
-
-    const nextVisibility = (dto.visibility ?? post.visibility) as PostVisibility;
-
-    if (nextVisibility === PostVisibility.plan) {
-      const nextPlanId = (dto as any).planId ?? post.planId;
-      if (!nextPlanId) throw new ForbiddenException('planId が必要です');
-      data.planId = nextPlanId;
-      data.priceJpy = null;
-    }
-
-    if (nextVisibility === PostVisibility.paid_single) {
-      const nextPrice = dto.priceJpy ?? post.priceJpy;
-      if (!nextPrice) throw new ForbiddenException('価格を設定してください');
-      data.priceJpy = nextPrice;
-      data.planId = null;
-    }
-
-    if (nextVisibility === PostVisibility.free) {
-      data.planId = null;
-      data.priceJpy = null;
-    }
-
-    return await this.prisma.post.update({
-      where: { id: postId },
-      data,
-      select: {
-        id: true,
-        title: true,
-        body: true,
-        visibility: true,
-        planId: true,
-        priceJpy: true,
-        publishedStatus: true,
-        publishedAt: true,
-        createdAt: true,
-      },
     });
   }
 

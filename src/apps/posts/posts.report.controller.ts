@@ -1,4 +1,4 @@
-// src/apps/posts/posts.report.controller.ts
+// api/src/apps/posts/posts.report.controller.ts
 import {
   Body,
   Controller,
@@ -6,7 +6,9 @@ import {
   Post as HttpPost,
   UseGuards,
   BadRequestException,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreateReportDto } from './dto/create-report.dto';
@@ -21,14 +23,13 @@ export class PostsReportController {
   async reportPost(
     @Param('postId') postId: string,
     @Body() dto: CreateReportDto,
-    req: any,
+    @Req() req: Request,
   ) {
-    const user = req.user as UserJwt | undefined;
-    if (!user) {
+    const user = (req as any).user as UserJwt | undefined;
+    if (!user?.id) {
       throw new BadRequestException('ユーザー情報を取得できませんでした');
     }
 
-    // 対象投稿が存在するか簡易チェック
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
       select: { id: true },
@@ -37,7 +38,6 @@ export class PostsReportController {
       throw new BadRequestException('投稿が存在しません');
     }
 
-    // 既に同じユーザーが同じ投稿を通報していたら、二重通報防止のため status を pending に戻す
     const existing = await this.prisma.report.findFirst({
       where: { postId, userId: user.id },
     });
@@ -57,6 +57,7 @@ export class PostsReportController {
         postId,
         userId: user.id,
         reason: dto.reason,
+        status: 'pending', // 明示したいなら
       },
     });
   }

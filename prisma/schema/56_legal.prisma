@@ -1,0 +1,42 @@
+// api/prisma/schema/56_legal.prisma
+
+/// 規約本文（版管理）
+model LegalDocument {
+  id          String            @id @default(cuid())
+  type        LegalDocumentType
+  version     Int
+  title       String
+  body        String
+  publishedAt DateTime?
+
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  agreements  UserAgreement[]
+
+  @@unique([type, version])
+  @@index([type, publishedAt])
+}
+
+/// 同意履歴（D-6）
+model UserAgreement {
+  id          String            @id @default(cuid())
+
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  documentId  String
+  document    LegalDocument     @relation(fields: [documentId], references: [id], onDelete: Restrict)
+
+  // 同意時点の版を複製保持（後から文面が増えても説明できる）
+  type        LegalDocumentType
+  version     Int
+
+  agreedAt    DateTime          @default(now())
+  ip          String?
+  userAgent   String?
+
+  @@index([userId, agreedAt])
+  @@index([type, version])
+  @@index([documentId])
+}

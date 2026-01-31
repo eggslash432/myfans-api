@@ -5,6 +5,12 @@ model Shop {
   name            String
   stripeAccountId String?
 
+  // 営業許可書（D-5/D-7）
+  businessLicenseFileKey   String?
+  businessLicenseStatus    BusinessLicenseStatus @default(pending)
+  businessLicenseCheckedAt DateTime?
+  businessLicenseCheckedBy String? // adminのuserId等を入れる想定（relation化は後でOK）  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

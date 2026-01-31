@@ -8,6 +8,7 @@ import {
   IsArray,
   ValidateNested,
   IsBoolean,
+  ArrayUnique,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PostPublishedStatus, PostVisibility, MediaType } from '@prisma/client';
@@ -37,11 +38,6 @@ export class UpdatePostMediaDto {
   @IsOptional()
   @IsInt()
   sortOrder?: number;
-
-  // ✅ 追加
-  @IsOptional()
-  @IsString()
-  genreId?: string;  
 }
 
 /**
@@ -79,4 +75,10 @@ export class UpdatePostDto {
   @ValidateNested({ each: true })
   @Type(() => UpdatePostMediaDto)
   media?: UpdatePostMediaDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  genreIds?: string[];   
 }

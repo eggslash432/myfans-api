@@ -4,7 +4,7 @@ model Post {
   id        String @id @default(uuid())
   creatorId String?
   planId    String?
-  genreId   String?
+  genres    PostGenre[]
 
   creator         Creator? @relation("CreatorPosts", fields: [creatorId], references: [userId], onDelete: Cascade)
   plan            Plan?    @relation(fields: [planId], references: [id])
@@ -18,6 +18,11 @@ model Post {
   isOfficial           Boolean @default(false)
   publishedStatus      PostPublishedStatus @default(draft)
   publishedAt          DateTime?
+  // 審査状態（D-3/D-4）
+  reviewStatus ReviewStatus @default(none)
+
+  // AI一次判定の履歴（任意：一覧で取ると楽）
+  moderationResults ModerationResult[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -30,6 +35,28 @@ model Post {
   @@index([creatorId, publishedStatus])
   @@index([visibility, planId])
   @@index([publishedAt])
+}
+
+model Genre {
+  id        String @id @default(cuid())
+  name      String
+  sortOrder Int    @default(0)
+  isActive  Boolean @default(true)
+
+  posts     PostGenre[]
+}
+
+model PostGenre {
+  postId    String
+  genreId   String
+  sortOrder Int @default(0)
+
+  post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([postId, genreId])
+  @@index([genreId])
+  @@index([postId])
 }
 
 model PostMedia {

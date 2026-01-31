@@ -1,0 +1,24 @@
+// api/prisma/schema/58_moderation.prisma
+
+/// AI一次判定の結果保持（D-2）
+model ModerationResult {
+  id          String               @id @default(cuid())
+
+  targetType  ModerationTargetType
+  targetId    String               // postId / mediaId 等
+
+  // Post連携（最短用）
+  postId      String?
+  post        Post?                @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  provider    String               @default("OPENAI")
+  decision    ModerationDecision
+  reasons     String?              // 簡易理由（要約）
+  raw         Json                 // Providerレスポンスをそのまま
+
+  createdAt   DateTime             @default(now())
+
+  @@index([targetType, targetId, createdAt])
+  @@index([postId, createdAt])
+  @@index([decision, createdAt])
+}

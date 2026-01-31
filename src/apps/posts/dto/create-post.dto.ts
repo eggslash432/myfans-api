@@ -3,6 +3,7 @@ import {
   IsString, IsEnum, IsOptional, IsArray, IsBoolean, IsInt, Min,
   ValidateNested, ValidateIf,
   ValidationOptions, registerDecorator,
+  ArrayUnique,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { AgeRatingEnum, PublishedStatusEnum, VisibilityEnum, MediaTypeEnum } from 'src/shared/enums';
@@ -93,4 +94,10 @@ export class CreatePostDto {
   @ValidateNested()
   @Type(() => AccessRulesDto)
   accessRules?: AccessRulesDto;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  genreIds?: string[];  
 }

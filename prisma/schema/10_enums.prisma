@@ -150,3 +150,69 @@ enum PlanModalMode {
   create
   edit
 }
+
+// ==============================
+// FAQ/規約
+// ==============================
+enum LegalDocumentType {
+  terms
+  privacy
+  guideline
+  other
+}
+
+// ==============================
+// NGワード
+// ==============================
+enum NgWordKind {
+  sexual
+  illegal
+  pii
+  other
+}
+
+enum NgWordSeverity {
+  low
+  medium
+  high
+}
+
+// ==============================
+// AIモデレーション
+// ==============================
+enum ModerationTargetType {
+  post_text
+  post_media
+}
+
+enum ModerationDecision {
+  allow
+  review
+  reject
+}
+
+// 投稿の審査状態（D-3/D-4の中核）
+enum ReviewStatus {
+  none
+  pending_review
+  approved
+  held
+  rejected
+}
+
+// ==============================
+// 営業許可書
+// ==============================
+enum BusinessLicenseStatus {
+  pending
+  approved
+  rejected
+}
+
+// ==============================
+// ヘルプ
+// ==============================
+enum HelpCategory {
+  GUIDE
+  FAQ
+}

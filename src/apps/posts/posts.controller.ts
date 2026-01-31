@@ -260,7 +260,10 @@ export class PostsController {
     // 投稿の所有者チェック（creatorId == user.id）
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      select: { id: true, creatorId: true },
+      select: { 
+        id: true, 
+        creatorId: true, 
+      },
     });
     if (!post) throw new NotFoundException('投稿が見つかりません');
     if (post.creatorId !== user.id) throw new ForbiddenException('権限がありません');

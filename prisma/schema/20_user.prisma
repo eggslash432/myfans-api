@@ -22,6 +22,10 @@ model User {
   favorites     Favorite[]
   reports       Report[]
   notifications Notification[]
+  // 規約同意履歴
+  agreements           UserAgreement[]
+  // 通知のON/OFF設定
+  notificationSettings NotificationSetting[]  
 
   shopMembers    ShopMember[] 
 

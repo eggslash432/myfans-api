@@ -7,6 +7,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreatorApprovalStatus, SubscriptionStatus, TransferKind } from '@prisma/client';
 import { ShopAuthService } from './shop-auth.service';
 import { startOfMonthLocal, startOfTodayLocal } from './shop-utils';
+import { ShopLicenseApprovedGuard } from '../access-control/shop-license-approved.guard';
 
 type DashboardSummaryRes = {
   todayGross: number; // ✅ shop取り分（今日）
@@ -15,7 +16,7 @@ type DashboardSummaryRes = {
   pendingCreatorApplications: number;
 };
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ShopLicenseApprovedGuard)
 @Controller()
 export class ShopDashboardController {
   constructor(

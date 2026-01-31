@@ -1,0 +1,29 @@
+// api/prisma/schema/55_help.prisma
+
+/// FAQ/ガイド記事（C-4/C-5）
+model HelpArticle {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  body        String
+  category    HelpCategory
+  order       Int      @default(0)
+  isPublished Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished, category, order])
+  @@index([category, order])
+}
+
+model SitePage {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  body      String   @db.Text
+  published Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+

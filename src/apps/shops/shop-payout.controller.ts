@@ -16,10 +16,11 @@ import { ShopOwnerOrAdminGuard } from '../access-control/shop-owner-or-admin.gua
 import { CreateShopPayoutDto } from './dto/shop-payout.dto';
 import { PayoutsRequestsService } from '../payments/payouts/services/payouts-requests.service';
 import { PayoutsBalanceService } from '../payments/payouts/services/payouts-balance.service';
+import { ShopLicenseApprovedGuard } from '../access-control/shop-license-approved.guard';
 
 
 @Controller('shops/me/payouts')
-@UseGuards(JwtAuthGuard, ShopOwnerOrAdminGuard)
+@UseGuards(JwtAuthGuard, ShopOwnerOrAdminGuard, ShopLicenseApprovedGuard)
 export class ShopPayoutController {
   constructor(
     private readonly payoutsRequestService: PayoutsRequestsService,

@@ -1,0 +1,20 @@
+// api/prisma/schema/59_notification_setting.prisma
+
+/// 通知設定（A-6）
+model NotificationSetting {
+  id            String   @id @default(cuid())
+
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type          NotificationType
+
+  inAppEnabled  Boolean  @default(true)
+  emailEnabled  Boolean  @default(false)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, type])
+  @@index([userId])
+}

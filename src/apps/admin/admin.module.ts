@@ -19,10 +19,14 @@ import { AdminNotificationsController } from './admin-notifications.controller';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AdminAnnouncementsController } from './admin-announcements.controller';
 import { AdminAnnouncementsMediaController } from './admin-announcement-media.controller';
+import { AuditModule } from '../audit/audit.module';
+import { AdminAuditLogsController } from './admin-audit-logs.controller';
+import { AdminErrorLogsController } from './admin-error-logs.controller';
 
 @Module({
   imports: [
     StorageModule,
+    AuditModule,
   ],
   controllers: [
     AdminCreatorsController, 
@@ -35,6 +39,8 @@ import { AdminAnnouncementsMediaController } from './admin-announcement-media.co
     AdminNotificationsController,
     AdminAnnouncementsController,
     AdminAnnouncementsMediaController,
+    AdminAuditLogsController,
+    AdminErrorLogsController,
   ],
   providers: [
     PrismaService,
