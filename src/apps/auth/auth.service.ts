@@ -11,8 +11,9 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { SignupDto } from './dto/signup.dto';
 import { PrismaService } from '../prisma/prisma.service';
-import { Role } from '@prisma/client';
+import { NotificationType, Role } from '@prisma/client';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 type JwtPayload = {
   sub: string;
@@ -25,6 +26,7 @@ export class AuthService {
   constructor(
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** サインアップ（User.role は運営のみ。一般ユーザーは role=null） */
@@ -71,6 +73,14 @@ export class AuthService {
 
     const access_token = await this.signAccessToken(user.id, user.role, user.email);
     const refresh_token = await this.signRefreshToken(user.id, user.role, user.email);
+
+    // ✅ ログイン成功通知（ここ）
+    await this.notifications.notify({
+      userId: user.id,
+      type: NotificationType.SYSTEM,
+      title: 'ログインしました',
+      body: 'あなたのアカウントにログインがありました。',
+    });
 
     return {
       access_token,

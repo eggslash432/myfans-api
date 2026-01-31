@@ -105,6 +105,7 @@ export class AdminNotificationsController {
       source: NotificationSource.ADMIN, // ✅ 強制
       title,
       body,
+      force: true,
     });
 
     return { ok: true, id: created.id, createdAt: created.createdAt };
